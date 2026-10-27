@@ -100,6 +100,8 @@ push / workflow_dispatch → 指定提交 → Windows runner
 - `ZCODE_ENABLE_WINDOWS_SIGN=0`、`CSC_IDENTITY_AUTO_DISCOVERY=false` 禁用签名；
   此入口不要求证书、私有源或发布令牌。
 - Electron 与 electron-builder 辅助工具使用官方 GitHub 下载地址。
+- `.gitattributes` 必须保留 Gen UI vendor 快照的原始字节，防止 Windows
+  `core.autocrlf` 改写换行后触发固定 SHA256 校验失败；不得通过跳过摘要检查来出包。
 - 工作流仅有 `contents: read` 权限，产物保存 14 天，不创建 GitHub Release。
 - artifact 名为 `ZCode-windows-x64-<commit SHA>`，包含 `.exe`、`.blockmap` 和
   `latest*.yml`；缺少安装包必须使工作流失败。
