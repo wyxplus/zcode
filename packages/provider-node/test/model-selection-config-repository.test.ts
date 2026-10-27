@@ -61,7 +61,7 @@ describe("NodeModelSelectionConfigRepository", () => {
       modelId: "model-a",
     });
     expect(JSON.parse(await readFile(filePath, "utf8"))).toEqual({
-      schemaVersion: 1,
+      schemaVersion: 2,
       config: {
         providerConfigRules: { providerRules: [] },
         modelConfigRules: { providerModelRules: [], manualProviderModelRules: [] },

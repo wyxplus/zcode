@@ -30,6 +30,7 @@ import { SettingsPage } from "@/SettingsPage.js";
 import { CodingPlanUpgradeDialogProvider } from "@/settings/CodingPlanUpgradeDialogProvider.js";
 import { RewardsProvider } from "@/rewards/RewardsProvider.js";
 import { WelcomeScreen, type LoginCompleteReason } from "@/WelcomeScreen.js";
+import { ModelSetupPage } from "@/model-setup/ModelSetupPage.js";
 import { setDefaultFileDisplayBasePath } from "@/lib/fileDisplay.js";
 import { readRendererLaunchTimings, shouldReportLaunchToInput } from "@/lib/launchToInputReport.js";
 import { reportUiLaunchToInput } from "@/lib/uiPerfArmsTelemetry.js";
@@ -98,7 +99,6 @@ import { setSendFunnelArmsReporter } from "@/lib/sendFunnelArmsTelemetry.js";
 import { RootStartupLoading } from "@/root/RootStartupLoading.js";
 import { resolveProviderAvailabilityState } from "@/lib/modelProviderAvailability.js";
 import { useProviderAvailabilityLoginEntryGuard } from "@/root/useProviderAvailabilityLoginEntryGuard.js";
-import { ensureProviderFamilyDomainMigration } from "@/lib/providerFamilyDomainMigration.js";
 import { useSettings } from "@/hooks/useSettingService.js";
 import { CLOSE_ACTIVE_CONTEXT_REQUEST_EVENT } from "@/lib/closeActiveContext.js";
 import { AssistantCodeCommentFeatureProvider } from "@/AssistantCodeCommentFeatureProvider.js";
@@ -340,7 +340,6 @@ function RootInner({
   const { intl, locale } = useZCodeIntl();
   const theme = useZCodeStore((state) => state.theme);
   const user = useZCodeStore((state) => state.user);
-  const isRestoringOAuthSession = useZCodeStore((state) => state.isRestoringOAuthSession);
   const setUser = useZCodeStore((state) => state.setUser);
   const setIsRestoringOAuthSession = useZCodeStore((state) => state.setIsRestoringOAuthSession);
   const setOAuthError = useZCodeStore((state) => state.setOAuthError);
@@ -566,9 +565,9 @@ function RootInner({
 
     void (async () => {
       try {
-        await ensureProviderFamilyDomainMigration(services);
+        await refreshProviderState();
       } catch (error) {
-        logger.warn("[Root] provider family domain 迁移失败，继续启动", {
+        logger.warn("[Root] 首次模型配置刷新失败，继续启动", {
           error,
         });
       } finally {
@@ -576,9 +575,8 @@ function RootInner({
           setProviderFamilyDomainMigrationComplete(true);
           try {
             await refreshAppSettings();
-            await refreshProviderState();
           } catch (refreshError) {
-            logger.warn("[Root] provider family domain 迁移后刷新状态失败", {
+            logger.warn("[Root] 首次模型配置设置刷新失败", {
               error: refreshError,
             });
           }
@@ -593,7 +591,7 @@ function RootInner({
 
   const shouldPreferDirectoryBrowser = Boolean(preferDirectoryBrowser);
   const supportsEmbeddedBrowser = explicitSupportsEmbeddedBrowser ?? Boolean(isDesktop);
-  const isResolvingStartupAuthState = isRestoringOAuthSession;
+  const isResolvingStartupAuthState = false;
   const rootProviderAvailability = resolveProviderAvailabilityState({
     modelSelectionView: rootModelSelectionView,
   });
@@ -610,9 +608,8 @@ function RootInner({
   const { startupCheckCompleted: providerAvailabilityStartupCheckCompleted } =
     useProviderAvailabilityLoginEntryGuard({
       enabled: providerAvailabilityLoginEntryGuardEnabled,
-      user,
-      isRestoringOAuthSession: isResolvingStartupAuthState || providerStartupSyncPending,
-      providerFamilyDomain: appSettings?.providerFamilyDomain,
+      settingsHydrated: Boolean(appSettings),
+      modelSetupSkipped: appSettings?.modelSetupSkipped ?? false,
       modelSelectionView: rootModelSelectionView,
       modelSelectionError:
         rootModelSelectionRead.state.status === "error"
@@ -1219,7 +1216,12 @@ function RootInner({
         {requestSecurityBridgeNode}
         {remoteConnectionDialog}
         {directoryBrowserDialog}
-        <WelcomeScreen onComplete={handleWelcomeScreenComplete} />
+        {welcomeScreenOpenReason === "startup-provider-required" ||
+        welcomeScreenOpenReason === "manual-login" ? (
+          <ModelSetupPage onComplete={handleWelcomeScreenComplete} />
+        ) : (
+          <WelcomeScreen onComplete={handleWelcomeScreenComplete} />
+        )}
       </RootShell>
     );
   }

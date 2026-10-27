@@ -144,6 +144,8 @@ function createSettingsMutationTarget(
 ): ProviderSettingsMutationTarget {
   const configService = configRuntime.configService;
   return {
+    saveGenericSetup: configService.saveGenericSetup.bind(configService),
+    saveConfiguredDefault: configService.saveConfiguredDefault.bind(configService),
     createPersonalProvider: (input) => configService.createPersonalProvider(input),
     savePersonalProviderOverlay: (providerId, config, membership, metadata) =>
       configService.savePersonalProviderOverlay(providerId, config, membership, metadata),

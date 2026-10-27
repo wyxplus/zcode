@@ -1,14 +1,9 @@
 import {
-  BUILTIN_PROVIDER_TEMPLATE_IDS,
   TID_CHAT_ERROR_BANNER,
   TID_CHAT_MODEL_SELECT_TRIGGER,
   TID_MODEL_PROVIDER_API_KEY_INPUT,
-  TID_MODEL_PROVIDER_CONNECTION_MODE_ITEM,
-  TID_MODEL_PROVIDER_CONNECTION_MODE_TRIGGER,
-  TID_LOGIN_API_KEY_SKIP_BUTTON,
-  TID_LOGIN_USE_API_KEY_BUTTON,
-  TID_SETTINGS_SECTION_NAV,
-  TID_SETTINGS_BACK_BUTTON,
+  TID_LOGIN_TRIGGER,
+  TID_LOGIN_MENU_ITEM,
   TID_TASK_ITEM,
   TID_V4_COMPOSER_INPUT,
   TID_V4_COMPOSER_SEND,
@@ -16,8 +11,9 @@ import {
 } from "@zcode/shared";
 import {
   clearAppData,
+  readModelProviders,
   clickTestIdByDom,
-  readModelProvider,
+  clickTestIdByWebDriver,
   setInputValueByTestIdDom,
   waitForDefaultWorkspaceReady,
   waitForTestIdByDom,
@@ -31,6 +27,7 @@ import {
 import {
   selectV4TaskById,
   startNewV4Draft,
+  switchV4Model,
   waitForV4TimelineContaining,
 } from "./helpers/v4-conversation.js";
 import {
@@ -54,12 +51,11 @@ describe("Provider/model readiness 只门禁模型执行", () => {
   it("I23/I24: 空配置只启动唯一只读 Agent，保存 API Key provider 后复用并水合草稿模型", async function () {
     this.timeout(120000);
 
-    await waitForTestIdByDom(TID_LOGIN_USE_API_KEY_BUTTON, {
+    await waitForTestIdByDom("model-setup-page", {
       timeout: 30000,
-      timeoutMsg: "空 auth/provider 冷启动后没有展示 API Key 配置入口",
+      timeoutMsg: "空 auth/provider 冷启动后没有展示通用模型配置入口",
     });
-    await clickTestIdByDom(TID_LOGIN_USE_API_KEY_BUTTON);
-    await clickTestIdByDom(TID_LOGIN_API_KEY_SKIP_BUTTON, {
+    await clickTestIdByDom("model-setup-skip", {
       timeout: 15000,
       timeoutMsg: "API Key 登录页没有可用的暂时跳过入口",
     });
@@ -81,10 +77,16 @@ describe("Provider/model readiness 只门禁模型执行", () => {
       timeout: 15000,
       timeoutMsg: "缺模型草稿页没有可输入的 composer",
     });
-    await clickTestIdByDom(TID_V4_COMPOSER_SEND, {
-      timeout: 15000,
-      timeoutMsg: "缺模型草稿页发送按钮不可用",
-    });
+    await browser.waitUntil(
+      () =>
+        browser.execute(
+          (id) =>
+            (document.querySelector(`[data-testid="${id}"]`) as HTMLButtonElement | null)
+              ?.disabled === true,
+          TID_V4_COMPOSER_SEND,
+        ),
+      { timeout: 15000, timeoutMsg: "缺模型草稿的发送按钮未阻断" },
+    );
     await browser.waitUntil(
       () =>
         browser.execute(
@@ -119,28 +121,25 @@ describe("Provider/model readiness 只门禁模型执行", () => {
     await waitForAgentProcessCount(1, { workspaceNameSuffix: "-zcodeproject" });
 
     await switchToElectronRendererTarget(isMainRendererUrl);
-    await clickModelSettingsFromMissingBanner();
-    await selectActiveFamilyApiKeyProvider();
-    await setInputValueByTestIdDom(TID_MODEL_PROVIDER_API_KEY_INPUT, E2E_PROVIDER_API_KEY, {
-      timeout: 15000,
-      timeoutMsg: "缺模型横幅没有打开 API Key provider 配置",
-    });
-    const provider = await waitForSavedApiKeyProvider();
-    await clickTestIdByDom(TID_SETTINGS_BACK_BUTTON, {
-      timeout: 15000,
-      timeoutMsg: "模型供应商设置页没有返回入口",
-    });
+    await clickTestIdByWebDriver(TID_LOGIN_TRIGGER);
+    await waitForTestIdByDom(TID_LOGIN_MENU_ITEM);
+    await clickTestIdByWebDriver(TID_LOGIN_MENU_ITEM);
+    await waitForTestIdByDom("model-setup-page");
+    await setInputValueByTestIdDom("model-setup-nameValue", "E2E_READINESS_GENERIC");
+    await setInputValueByTestIdDom("model-setup-baseUrlValue", "http://localhost:8080/v1");
+    await setInputValueByTestIdDom(TID_MODEL_PROVIDER_API_KEY_INPUT, E2E_PROVIDER_API_KEY);
+    await setInputValueByTestIdDom("model-setup-modelId", "readiness-model");
+    await setInputValueByTestIdDom("model-setup-contextWindow", "16000");
+    await setInputValueByTestIdDom("model-setup-maxOutputTokens", "4000");
+    await clickTestIdByDom("model-setup-save");
     await waitForDefaultWorkspaceReady(30000);
-
-    const hydratedModel = provider.models.find(
-      (model) => typeof model === "object" && !model.deleted && !model.disabledReason,
+    // 默认只影响新草稿；已保留的空绑定草稿由用户主动选择，不由配置保存覆写。
+    const configured = (await readModelProviders()).find(
+      (item) => item.name === "E2E_READINESS_GENERIC",
     );
-    expect(hydratedModel).toBeDefined();
-    await waitForHydratedDraftModel(
-      hydratedModel && typeof hydratedModel === "object"
-        ? (hydratedModel.name ?? hydratedModel.id)
-        : "",
-    );
+    expect(configured).toBeDefined();
+    await switchV4Model(configured!.id, "readiness-model", "");
+    await waitForHydratedDraftModel("readiness-model");
     await waitForModelConfigMissingBannerCleared();
 
     await switchToElectronRendererTarget(isResourceManagerUrl);
@@ -166,81 +165,6 @@ async function waitForProviderReadinessHistory() {
       .trim();
   }, itemTestId);
   expect(title).toContain(PROVIDER_READINESS_HISTORY_TITLE);
-}
-
-async function clickModelSettingsFromMissingBanner() {
-  await browser.waitUntil(
-    () =>
-      browser.execute((bannerTestId) => {
-        const banner = document.querySelector<HTMLElement>(`[data-testid="${bannerTestId}"]`);
-        const button = Array.from(banner?.querySelectorAll<HTMLButtonElement>("button") ?? []).find(
-          (candidate) => candidate.querySelector("svg.lucide-settings"),
-        );
-        if (!button || button.disabled) return false;
-        button.click();
-        return true;
-      }, TID_CHAT_ERROR_BANNER),
-    {
-      timeout: 15000,
-      interval: 100,
-      timeoutMsg: "缺模型横幅没有可用的模型配置入口",
-    },
-  );
-}
-
-async function selectActiveFamilyApiKeyProvider() {
-  // ProviderFamilyPlanModeSwitch 只展示当前 family 的连接方式；从缺模型横幅进入时
-  // 默认会落在 BigModel Coding Plan，并按当前 OAuth family 隐藏 Z.ai。I23/I24 的
-  // 业务目标是配置一个可用 API Key provider，不是跨 family 切换，因此在当前 family
-  // 的连接方式下拉框选择 BigModel API Key，触发产品规定的 apiKey mode 持久化。
-  const modelProviderSectionTestId = testId(TID_SETTINGS_SECTION_NAV, "modelProvider");
-  await waitForTestIdByDom(modelProviderSectionTestId, {
-    timeout: 15_000,
-    timeoutMsg: "缺模型横幅没有打开模型设置页",
-  });
-  await clickTestIdByDom(modelProviderSectionTestId, {
-    timeout: 15_000,
-    timeoutMsg: "设置页没有模型设置分区入口",
-  });
-  await clickTestIdByDom(TID_MODEL_PROVIDER_CONNECTION_MODE_TRIGGER, {
-    timeout: 15_000,
-    timeoutMsg: "模型设置页没有当前 family 的连接方式选择器",
-  });
-  await clickTestIdByDom(
-    testId(
-      TID_MODEL_PROVIDER_CONNECTION_MODE_ITEM,
-      `preset:${BUILTIN_PROVIDER_TEMPLATE_IDS.bigmodel}`,
-    ),
-    {
-      timeout: 15_000,
-      timeoutMsg: "模型设置页没有 BigModel API Key 连接方式",
-    },
-  );
-}
-
-async function waitForSavedApiKeyProvider() {
-  let latest = await readModelProvider(BUILTIN_PROVIDER_TEMPLATE_IDS.bigmodel);
-  await browser.waitUntil(
-    async () => {
-      latest = await readModelProvider(BUILTIN_PROVIDER_TEMPLATE_IDS.bigmodel);
-      const provider = latest;
-      return Boolean(
-        provider?.apiKey?.trim() &&
-        provider.models.some(
-          (model) => typeof model === "object" && !model.deleted && !model.disabledReason,
-        ),
-      );
-    },
-    {
-      timeout: 15000,
-      interval: 250,
-      timeoutMsg: "API Key 登录后没有保存结构可用的 BigModel provider/model",
-    },
-  );
-  if (!latest) {
-    throw new Error("API Key 登录后没有读取到 BigModel provider");
-  }
-  return latest;
 }
 
 async function waitForHydratedDraftModel(modelName: string) {

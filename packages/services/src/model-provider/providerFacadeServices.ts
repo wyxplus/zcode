@@ -15,6 +15,8 @@ import {
   type ProviderSettingsView,
   type ResolveModelConfigInput,
   type SavePersonalModelDraftInput,
+  type SaveGenericSetupInput,
+  type SaveConfiguredDefaultInput,
 } from "@zcode/provider";
 import { createServiceDescriptor } from "../descriptors.js";
 import type { ModelConnectivityResult } from "@zcode/shared";
@@ -31,6 +33,8 @@ export interface IProviderSettingsService {
   readonly onDidChange: Event<ProviderSettingsView>;
   getView(): Promise<ProviderSettingsView>;
   refresh(reason: string): Promise<ProviderSettingsView>;
+  saveGenericSetup(input: SaveGenericSetupInput): Promise<ProviderSettingsCreationResult>;
+  saveConfiguredDefault(input: SaveConfiguredDefaultInput): Promise<ProviderSettingsView>;
   createPersonalProvider(
     input?: Parameters<ProviderSettingsFacade["createPersonalProvider"]>[0],
   ): Promise<ProviderSettingsCreationResult>;
@@ -120,6 +124,14 @@ export function createProviderSettingsService(
     refresh: async (reason) => {
       await ensureReady();
       return facade.refresh(reason);
+    },
+    saveGenericSetup: async (input) => {
+      await ensureReady();
+      return facade.saveGenericSetup(input);
+    },
+    saveConfiguredDefault: async (input) => {
+      await ensureReady();
+      return facade.saveConfiguredDefault(input);
     },
     createPersonalProvider: async (input) => {
       await ensureReady();

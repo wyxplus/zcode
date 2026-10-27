@@ -4,7 +4,7 @@
 > `default-policy`、`providerOptionsByLevel` 和 Runtime 反向匹配均已删除。GLM-5.2 的有效行为
 > 现在由 Built-in Model Config Rules 显式声明，再通过 Effective Model Config 交给 Adapter；
 > 禁止恢复本文的按名称推断实现。当前契约见
-> [Model Contract](../../../../../../docs/working-memory/provider-refactor/design/model/contract.md)。
+> [Model Contract](../../../../../../docs/model-provider/architecture.md)。
 
 ## Status
 

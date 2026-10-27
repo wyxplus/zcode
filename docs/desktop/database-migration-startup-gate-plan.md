@@ -1,6 +1,6 @@
 # 进入 ZCode 前统一准备数据库
 
-状态：2026-09-14 已实现，完成代码复审；自动化验证和平台限制见 [实施复审](./database-startup-implementation-review.md)。执行与验收清单见 [Todo 145](../working-memory/provider-refactor/steps/todo-145-global-database-startup-loading.md)。
+状态：已实现。当前合同、验收矩阵与仍待补齐的验证见本文；清理过程文档不表示发布验收通过。
 
 ## 目标和冻结边界
 
@@ -85,7 +85,7 @@ Renderer：ready(B) + port(B) → Root
 
 ## 2026-09-15：无待迁移项时静默启动（Todo 146）
 
-本节取代旧的“准备阶段均展示文案”规则。详见 [Todo 146](../working-memory/provider-refactor/steps/todo-146-silent-database-startup.md)。正常启动仅 Logo；确认存在待执行 migration 后才展示初始化/升级、保存、完成启动文字。失败始终显示。维护不再报告 migrating；空检查事务不显示升级结果。Host 聚合执行端的迁移种类、实际执行与提交数量，Renderer 与 ARMS 消费同源事实。SQLite 预检仅用于显示，拿写锁后重查账本，原 SQL/ID/checksum/事务边界不变。本次成功会话库按真实路径复用，失败与新 attempt 不复用。静默不等于跳过维护或保证零 IO。
+本节取代旧的“准备阶段均展示文案”规则。详见 [Todo 146](database-migration-startup-gate-plan.md)。正常启动仅 Logo；确认存在待执行 migration 后才展示初始化/升级、保存、完成启动文字。失败始终显示。维护不再报告 migrating；空检查事务不显示升级结果。Host 聚合执行端的迁移种类、实际执行与提交数量，Renderer 与 ARMS 消费同源事实。SQLite 预检仅用于显示，拿写锁后重查账本，原 SQL/ID/checksum/事务边界不变。本次成功会话库按真实路径复用，失败与新 attempt 不复用。静默不等于跳过维护或保证零 IO。
 
 ## 2026-09-15：上报迁移前最后已应用编号
 
@@ -104,3 +104,43 @@ SQLite 拿锁 → 读取起点 → 原迁移/COMMIT 或失败
 验收：空库 none、旧库准确起点、重开为最新编号；另一写者先提交后读到其结果；执行失败保留迁移前编号；未知与无记录区分；多库不混淆、重复快照不重复上报、手动重试清空；原 SQL 和 checksum 不变。
 
 验证记录：应用侧 7 文件 39 项、CLI 原迁移/异步锁/崩溃恢复/session-store 4 文件 60 项通过；root `pnpm typecheck`、`pnpm lint`（45 warnings / 0 errors）、architecture（0 violations）、CLI adapters/bootstrap tsc 与 adapters lint、桌面 tsup 通过。构建后的真实 tasks Worker 在隔离临时库验证：空库起点 null；只缺 0003 时起点 0002 且提交 1 项；再次打开起点 0003 且执行 0 项。没有修改 UI/E2E 交互，没有发送生产 ARMS 事件；后台入库仍待验证。日志在本机 `/tmp/zcode-migration-baseline-*.log`。
+
+## 数据库启动验收矩阵
+
+以下全部待执行，不继承旧 TODO 的完成勾选。
+
+| ID          | 场景                                                | 必须证明                                                             |
+| ----------- | --------------------------------------------------- | -------------------------------------------------------------------- |
+| GLOBALDB-01 | 新用户无工作区、无账号/Key、网络不可用              | 本地必需库准备成功后进入正常首次使用流程                             |
+| GLOBALDB-02 | Host 旧库迁移期间暂停执行                           | 启动页已可见、状态可读、窗口响应、业务尚未启动                       |
+| GLOBALDB-03 | Host 完成、会话库长迁移                             | 阶段正确切换；两库和服务都准备好才进入 Root                          |
+| GLOBALDB-04 | 已迁移、部分迁移、迁移后用户又修改数据              | 不重复已完成项、不覆盖后续修改；原 SQL/checksum/账本兼容             |
+| GLOBALDB-05 | Host 成功后会话库失败，再重试                       | 不回退已提交 Host 库；会话未提交事务恢复；无需重建配置               |
+| GLOBALDB-06 | Host 迁移后修复失败、必需服务装配失败               | 不假 ready，错误归属准确，重试无重复副作用或资源泄漏                 |
+| GLOBALDB-07 | 多窗口 / 独立 CLI 访问同库、不同库                  | 同库 SQLite 排他且不重复迁移；不同库不串状态                         |
+| GLOBALDB-08 | 等锁超过旧 5 秒、等锁超预算                         | 前者能继续成功；后者可诊断，不终止锁 owner                           |
+| GLOBALDB-09 | COMMIT 前强杀、COMMIT 后通知丢失                    | 真实子进程恢复正确，账本与数据一致                                   |
+| GLOBALDB-10 | 首状态缺失、Worker/Agent 崩溃、IPC 断链             | 可观察失败/重连状态，没有永久无反馈 loading                          |
+| GLOBALDB-11 | 页面刷新、双击重试、旧 ready 迟到                   | 不重复启动或取消迁移；新 attempt 不被旧状态覆盖                      |
+| GLOBALDB-12 | FULL、权限、I/O、checksum、坏库等错误               | 明确原因、安全恢复入口，无假成功或空库兜底                           |
+| GLOBALDB-13 | 自定义数据目录及不同会话库配置                      | 准备库与业务实际打开的库一致，不能误报全局就绪                       |
+| GLOBALDB-14 | 同时触发 scheduler / bot / Wiki / 预热              | 服务端准入有效，不依赖 UI 遮罩，不复制 accepted queue                |
+| GLOBALDB-15 | 本地启动与远程历史、远端连接失败、旧 Agent          | 不主动连接所有环境，不把网络失败误报 DB 错误；旧协议有明确兼容行为   |
+| GLOBALDB-16 | 手机配对、重连及 shared-host 准备期间访问           | 不另起 runtime；desktop continuous 与手机 replayable 边界不变        |
+| GLOBALDB-17 | Windows/macOS/Linux、主题语言与窄屏                 | 可见、可操作、无白屏；打包后 Worker/子进程资源路径可用               |
+| GLOBALDB-18 | 冷启动已迁移库、退出再启动                          | 无不必要 Agent/Worker 遗留、重复后台任务或明显启动回归               |
+| GLOBALDB-19 | ARMS 事件、阶段切换、失败文案及重试                 | 时间边界准确，UI 与遥测错误同源，终态去重；最终 payload 不超属性预算 |
+| GLOBALDB-20 | 长 SQL 执行中可用空间下降后恢复                     | 采样独立运行；保存相对开始基线的最大下降量，回滚后空间恢复不抹掉峰值 |
+| GLOBALDB-21 | 多卷、文件不存在、探测失败、SDK 异常及离线          | 缺失值不填零，按卷区分，业务仍正常准备，无扫描或上报阻塞             |
+| GLOBALDB-22 | 迁移执行者崩溃、应用强退、只有开始事件              | 可区分已确认失败与未知终态；不编造 SQL 错误、真实峰值或必达上报      |
+| GLOBALDB-23 | SQLite FULL / ENOSPC / EDQUOT；采样仍有空间或缺失   | 分类和文案准确，不依赖采样才能识别，不误指故障盘                     |
+| GLOBALDB-24 | IOERR / CANTOPEN / 权限 / NOMEM / 未知进程退出      | 不误报磁盘满或 OOM，未知信息保留未知，UI 与遥测同源                  |
+| GLOBALDB-25 | COMMIT 或迁移后修复失败，随后 rollback/close 再失败 | 原始原因保留，清理与重试状态明确，不假称完成回滚                     |
+| GLOBALDB-26 | 主库盘有空间、临时盘失败；重试时空间已恢复          | 不用主库余量否定 FULL；旧峰值保留，新 attempt 独立，账本正确         |
+
+20 GB 性能测试仍暂缓，后续明确授权再测；本轮仅隔离库功能验证。不能用小库成功推断低内存、磁盘不足用户必然迁移成功。
+无法完成的平台、远端、E2E 或性能验证须明确保留待验项，不能仅凭 loading 出现就交付。
+
+## 尚未完成的发布验证
+
+Electron GUI、Windows/macOS 打包 Worker、手机 shared-host 与远端实机验收仍未由现有记录证明完成。Node Worker 和浏览器测试不能替代这些平台结果。ARMS 后台入库尚未验证，HTTP 接收不等于后台可查询；此版本无跨重启 outbox，不承诺强杀、离线或 SDK 禁用时终态必达。不作 20 GB 性能承诺，不在真实用户库上执行验证。

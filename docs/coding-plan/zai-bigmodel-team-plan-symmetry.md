@@ -719,12 +719,12 @@ stream / snapshot / queue / owner / replayable 等远控语义，桌面与手机
 
 ## 风险点
 
-| 风险                                                                          | 缓解                                                                                                                                                                                                                                |
-| ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 风险                                                                          | 缓解                                                                                                                                                                                                                        |
+| ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | ~~zai 后端企业接口实际行为未知~~                                              | ✅ 已验证：测试环境 `api.z.ai` getCustomerInfo 成功，结构与 bigmodel 同构；注入流程（list + POST create `zcode-team-api-key`）已在 zai 复用，prewarm 日志可见。测试账号 POST 创建被拒（缺 grant）属后端侧问题，代码无需改动 |
-| ~~ModelProviderSection 清理 useEffect 重复（anomaly）~~                       | ✅ 已合并为单个 family-aware effect                                                                                                                                                                                                 |
-| ~~`WorkspaceSidebarFooterUsageSummary` 显式 `providerFamily !== "zai"` 排除~~ | ✅ 已修复：sidebar badge / 聊天框模型选择 / 使用统计页三个消费方已全部对称化（见上文「消费方对称化遗漏」章节）                                                                                                                      |
-| literal 前缀检查点遗漏                                                        | grep 全量 `team-plan:` literal 逐一评估，已覆盖核心路径                                                                                                                                                                             |
+| ~~ModelProviderSection 清理 useEffect 重复（anomaly）~~                       | ✅ 已合并为单个 family-aware effect                                                                                                                                                                                         |
+| ~~`WorkspaceSidebarFooterUsageSummary` 显式 `providerFamily !== "zai"` 排除~~ | ✅ 已修复：sidebar badge / 聊天框模型选择 / 使用统计页三个消费方已全部对称化（见上文「消费方对称化遗漏」章节）                                                                                                              |
+| literal 前缀检查点遗漏                                                        | grep 全量 `team-plan:` literal 逐一评估，已覆盖核心路径                                                                                                                                                                     |
 
 ## 修复：zai coding plan provider 不落盘（endpoint 兜底对称化）
 
@@ -851,6 +851,6 @@ unit/number 语义是稳定契约，type 枚举差异通过等价集合吸收。
 ## 相关文档
 
 - `docs/coding-plan-enterprise.md` — 企业版编程套餐购买闭环（bigmodel 现状）
-- `docs/input-model-provider-team-plan-linkage.md` — 输入框模型/Provider/Team Plan 链路
+- `docs/model-provider/selection-state.md` — 输入框模型/Provider/Team Plan 链路
 - `docs/coding-plan-purchase-panel-flow.md` — 购买面板流程
 - `docs/model-provider-coding-plan-availability.md` — Coding Plan 可用性计算

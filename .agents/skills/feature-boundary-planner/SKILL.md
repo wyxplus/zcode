@@ -137,7 +137,9 @@ Run this section only in `planning` or `implementation-handoff` mode.
 
 ## Write Docs Before Code
 
-In planning modes, update or create the feature spec, catalog, matrix, decision worksheet, or backlog before implementation. For conversation-related E2E work, update the conversation case catalog and coverage matrix and obtain pruning decisions before writing tests.
+In planning modes, update the existing feature spec, catalog, matrix, decision worksheet or backlog before implementation. Create a document only when a distinct maintained domain has no suitable entry. For conversation-related E2E work, update the conversation case catalog and coverage matrix and obtain pruning decisions before writing tests.
+
+Keep Impact Briefs, raw reachability, implementation steps and verification logs in the conversation or temporary storage by default. Persist only confirmed product decisions and a necessary unfinished handoff in the canonical documents. On completion, merge lasting constraints, preserve open decisions and coverage limits, then remove superseded process files and update references. Do not create a separate dated plan, review and report for each scan.
 
 Hand accepted E2E cases to `e2e-case-lifecycle` when they require manual-review specs, provider replay fixtures, Docker isolation, timing control, or CI promotion.
 

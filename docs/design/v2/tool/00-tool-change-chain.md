@@ -210,7 +210,7 @@ profile 原 Selection -> Worker 公共 Selection Facade（同一已应用账号/
   -> 临时有效 Selection -> child Runtime -> ModelFactory 精确校验 -> 模型请求
 ```
 
-解析通过宿主注入的只读端口复用；不改工具参数、结果与 profile 持久化。无同模型时不回退父模型；档位失效不补默认。隐式继承和内部执行 override 不重解释。端口透传子 Runtime / workflow，独立终端 CLI 未注入时保持原行为。完整契约与验证见 `docs/working-memory/provider-refactor/steps/todo-99-worker-account-selection-repair.md`。
+解析通过宿主注入的只读端口复用；不改工具参数、结果与 profile 持久化。无同模型时不回退父模型；档位失效不补默认。隐式继承和内部执行 override 不重解释。端口透传子 Runtime / workflow，独立终端 CLI 未注入时保持原行为。完整契约与验证见 `docs/model-provider/architecture.md`。
 
 ## 闲时轮禁止 SendMessage / Workflow（D52）
 
@@ -226,6 +226,7 @@ Host 闲时派发 -> prompt-turn.ts / server-operations.ts turn denylist（+Send
 `isOffPeakCreateRestrictedTurn` 的 denylist 兜底只认 OffPeakCreate 哨兵。工具 schema、权限、超时不变；
 automation 轮与普通轮不受影响。测试：`core/tests/off-peak-tool.test.ts`、
 `bootstrap/tests/offpeak-prompt-turn-disallowlist.test.ts`、`bootstrap/tests/v4-native-commands.test.ts`。
+
 #### 2026-09-08 原生验证发现的入口校验问题
 
 话题原文回查与历史附件选择均以 `conversationInputIntent` 为权威来源。仅当该字段不存在时兼容 `inputIntent`；权威字段存在但无有效话题记录时，不得从同条消息的旧字段恢复记录。相同消息上两个字段冲突时只采纳权威记录，正文与 synthetic 背景仍不能注入来源身份。

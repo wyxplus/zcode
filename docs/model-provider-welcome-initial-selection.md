@@ -1,5 +1,7 @@
 # Model Provider Welcome 初始选中策略
 
+当前首次/手动入口和默认写入已迁至 [generic API spec](specs/generic-api-only-workbench/README.md)。Personal 文件为 v2，默认与源/模型由同一 Repository 保存。以下账号域或旧配置格式仅为尚存 legacy/历史说明，不作为新向导写入合同；全面清理留 S5/S6。
+
 ## 背景
 
 WelcomeScreen 同时承载账号 OAuth 登录和 API Key 配置入口。两类入口的用户意图不同：

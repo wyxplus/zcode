@@ -137,6 +137,53 @@ async function createService(): Promise<ProviderRegistryService> {
 }
 
 describe("Provider Facades", () => {
+  it("默认写入拒绝旧 revision/隐藏模型/不完整档位，并在 owner 事务校验发布快照", async () => {
+    const service = await createService();
+    const saveConfiguredDefault = vi.fn(async (_selection, membership) => {
+      membership.assertCurrent();
+    });
+    const mutations = {
+      saveConfiguredDefault,
+      createPersonalProvider: vi.fn(async () => ({ providerId: "unused" })),
+      savePersonalProviderOverlay: vi.fn(),
+      deletePersonalProvider: vi.fn(),
+      reorderPersonalProviders: vi.fn(),
+      reorderPersonalModels: vi.fn(),
+      addPersonalModel: vi.fn(),
+      renamePersonalModel: vi.fn(),
+      deletePersonalModel: vi.fn(),
+      savePersonalModelDraft: vi.fn(),
+      setPersonalModelEnabled: vi.fn(),
+      refresh: vi.fn(async () => service.getSnapshot()!),
+    };
+    const facade = new ProviderSettingsFacade(service, mutations);
+    const selection = {
+      providerId: "personal",
+      modelId: "custom",
+      options: { reasoningLevel: "disabled" },
+    };
+    const basedOnRevision = facade.getView().revision;
+    await expect(
+      facade.saveConfiguredDefault({ selection, basedOnRevision: basedOnRevision - 1 }),
+    ).rejects.toThrow(/revision/);
+    await expect(
+      facade.saveConfiguredDefault({
+        selection: { ...selection, providerId: "hidden", modelId: "m1" },
+        basedOnRevision,
+      }),
+    ).rejects.toThrow(/selectable/);
+    await expect(
+      facade.saveConfiguredDefault({
+        selection: { providerId: "personal", modelId: "custom" },
+        basedOnRevision,
+      }),
+    ).rejects.toThrow(/selectable/);
+    expect(saveConfiguredDefault).not.toHaveBeenCalled();
+    await facade.saveConfiguredDefault({ selection, basedOnRevision });
+    expect(saveConfiguredDefault).toHaveBeenCalledTimes(1);
+    expect(saveConfiguredDefault.mock.calls[0]?.[0]).toEqual(selection);
+    expect(mutations.refresh).toHaveBeenCalledTimes(1);
+  });
   it("Settings View 同时投影 Personal、Effective、问题和调序能力", async () => {
     const service = await createService();
     const view = new ProviderSettingsFacade(service).getView();

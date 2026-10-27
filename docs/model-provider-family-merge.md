@@ -5,7 +5,7 @@
 > Start、Individual、Team，普通 API 通过 Template 创建。下文旧 `builtin:*`、mode/selectedKey、
 > Provider Key 缓存及自动改会话选择的段落不可作为恢复旧架构的依据。
 > 本轮保留的产品行为是 Family 连接菜单、独立查询 Start 权益和数量快捷入口。
-> 具体适配与未决行为见 [Todo 85 审计表](working-memory/provider-refactor/plan/staging-conflict-restoration-audit.md)。
+> 具体适配与未决行为见 [Todo 85 审计表](model-provider/architecture.md)。
 
 ## Goal
 

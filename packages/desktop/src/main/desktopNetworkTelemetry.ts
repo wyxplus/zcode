@@ -182,12 +182,6 @@ function classifyWsError(error: unknown): string {
 
 export function configureDesktopNetworkTelemetry(context: NetworkGlobalContext): void {
   globalContext = context;
-  armsRum.setConfig("properties", {
-    device_mid: context.deviceMid,
-    platform: normalizeOsCategory(context.platform),
-    app_version: context.appVersion,
-    arms_env: context.armsEnv,
-  });
 }
 
 export function registerDesktopNetworkTelemetry(logger: NetworkLogger): void {

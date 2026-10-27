@@ -4,7 +4,7 @@ Use this template when dispatching a spec document reviewer subagent.
 
 **Purpose:** Verify the spec is complete, consistent, and ready for implementation planning.
 
-**Dispatch after:** Spec document is written to docs/superpowers/specs/
+**Dispatch after:** The canonical domain spec has been updated and an independent review is authorized. The spec may be an existing file; a new dated design document is not required.
 
 ```
 Task tool (general-purpose):

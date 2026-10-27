@@ -420,13 +420,6 @@ export function configureDesktopResourceTelemetry(context: ResourceGlobalContext
   processResourceSystemWindow.clear();
   globalContext = context;
   desktopHardware = resolveDesktopHardware(context.platform);
-
-  armsRum.setConfig("properties", {
-    device_mid: context.deviceMid,
-    platform: normalizeOsCategory(context.platform),
-    app_version: context.appVersion,
-    arms_env: context.armsEnv,
-  });
 }
 
 export function registerDesktopResourceTelemetry(

@@ -78,11 +78,9 @@ async function setup() {
   });
   function envelope(withDefault = true) {
     return providerProvisioningEnvelopeSchema.parse({
-      schemaVersion: 1,
+      schemaVersion: 3,
       syncId: "fixture-sync",
       personalConfig: encodeProviderConfigFile(config("Incoming", withDefault)).config,
-      accountSettings,
-      credentials: [],
     });
   }
   return { directory, filePath, personal, settings, account, registry, target, envelope };
@@ -164,15 +162,18 @@ describe("Todo104 分发同文件原子边界", () => {
     expect((await read()).defaultModelSelection?.modelId).toBe("new-default");
   });
 
-  it("写入其他域时 Personal 已发生变化，前向替换也必须保留并发值", async () => {
-    const { personal, settings, target, envelope } = await setup();
-    settings.update.mockImplementationOnce(async () => {
+  it("捕获同步前状态时 Personal 发生变化，前向替换保留并发值", async () => {
+    const { personal, target, envelope } = await setup();
+    const read = personal.read.bind(personal);
+    vi.spyOn(personal, "read").mockImplementationOnce(async () => {
+      const before = await read();
       await personal.update((current) => ({
         ...current,
         defaultModelSelection: { providerId: "fixture", modelId: "new-before-apply" },
       }));
+      return before;
     });
-    expect(await target.apply(envelope(false))).toMatchObject({ status: "rollback_failed" });
+    expect(await target.apply(envelope(false))).toMatchObject({ status: "failed" });
     const current = await personal.read();
     expect(current.defaultModelSelection?.modelId).toBe("new-before-apply");
     expect(current.providers.getRule("fixture")?.providerName).toBe("Before");
@@ -217,9 +218,9 @@ describe("Todo104 分发同文件原子边界", () => {
   });
 
   it("后续刷新失败时整份恢复 Provider 和默认选择", async () => {
-    const { personal, account, target, envelope } = await setup();
+    const { personal, registry, target, envelope } = await setup();
     const before = encodeProviderConfigFile(await personal.read());
-    account.refresh.mockRejectedValueOnce(new Error("refresh failed"));
+    registry.refresh.mockRejectedValueOnce(new Error("refresh failed"));
     expect(await target.apply(envelope(false))).toMatchObject({
       status: "failed",
       rolledBack: true,
@@ -231,8 +232,8 @@ describe("Todo104 分发同文件原子边界", () => {
   it.each(["provider", "default"])(
     "刷新失败前另一个写入修改 %s，不能用旧回滚覆盖",
     async (field) => {
-      const { personal, account, target, envelope } = await setup();
-      account.refresh.mockImplementationOnce(async () => {
+      const { personal, registry, target, envelope } = await setup();
+      registry.refresh.mockImplementationOnce(async () => {
         await personal.update((current) =>
           field === "provider"
             ? {

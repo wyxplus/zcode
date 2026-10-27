@@ -5,14 +5,14 @@
 > **历史审计，已被 Provider Refactor 取代。** 本文记录的是迁移前的 App Provider Snapshot、
 > `runtimeModel` fallback 和 workspace catalog 链路，不是当前实现。当前模型事实由目标 Environment
 > 的 Effective Provider Config、Model Config Rules、Provider Registry 与 ModelFactory 共同产生；
-> 当前设计见 `docs/working-memory/provider-refactor/design/`。
+> 当前设计见 `docs/model-provider/`。
 
 本文汇总以下四条当前链路，并记录仍然存在的复杂性和缺口：
 
 - `docs/chat/task-switch-model-resolution-chain.md`
 - `docs/chat/new-task-model-resolution-chain.md`
-- `docs/chat/manual-model-switch-resolution-chain.md`
-- `docs/chat/send-prompt-model-resolution-chain.md`
+- `docs/model-provider/selection-state.md`
+- `docs/model-provider/execution-selection.md`
 
 ## 审计结论
 

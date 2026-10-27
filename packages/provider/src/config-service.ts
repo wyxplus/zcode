@@ -15,6 +15,8 @@ import {
   ProviderConfig as ProviderConfigValue,
   ProviderTemplateMap,
   resolveProviderTemplateName,
+  extractManualModelConfig,
+  parseModelConfig,
 } from "./config/index.js";
 import { resolveOwnedOrder } from "./owned-order.js";
 import type { ModelSelection } from "@zcode/shared/model-selection";
@@ -57,6 +59,14 @@ export interface CreatePersonalProviderInput {
   readonly providerName?: string;
   readonly locale?: ProviderTemplateLocale;
   readonly initialConfig?: ProviderConfig;
+}
+
+export interface GenericSetupInput {
+  readonly setupId: string;
+  readonly providerName: string;
+  readonly providerConfig: ProviderConfig;
+  readonly modelId: ModelId;
+  readonly modelConfig: ModelConfig;
 }
 
 /** Facade 提供的 Host 内部成员事实；不得接受 Renderer 自报的模型名单。 */
@@ -139,6 +149,92 @@ export class ProviderConfigService implements ProviderSource<ProviderConfigSnaps
     this.#assertNotDisposed();
     // 全量导入/分发与字段编辑不同；新信封未带默认选择时必须清除，不能继承接收端旧值。
     return this.#personalRepository.update(() => config);
+  }
+
+  async saveGenericSetup(input: GenericSetupInput): Promise<PersonalProviderCreation> {
+    if (
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.setupId)
+    ) {
+      throw new Error("Invalid setup ID");
+    }
+    const providerId = `custom-${input.setupId.toLowerCase()}`;
+    const modelId = normalizeId("modelId", input.modelId);
+    const providerName = input.providerName.trim();
+    if (!providerName || input.providerConfig.access?.type !== "api-key") {
+      throw new Error("Generic setup requires a provider name and generic access");
+    }
+    if (
+      input.providerConfig.group !== undefined ||
+      input.providerConfig.builtinModelIds !== undefined ||
+      input.providerConfig.personalModelIds !== undefined
+    ) {
+      throw new Error("Generic setup cannot declare provider membership");
+    }
+    const provider = input.providerConfig.overlay(
+      new ProviderConfigValue({
+        group: "standard-personal",
+        personalModelIds: [modelId],
+        modelOrder: [modelId],
+      }),
+    );
+    const model = input.modelConfig;
+    const storedModel = parseModelConfig(extractManualModelConfig(model.toJSON()));
+    const reasoningLevel = model.optionSpecs?.reasoningLevel?.values?.at(-1);
+    if (
+      provider.validateComplete().length ||
+      model.validateComplete().length ||
+      model.enabled !== true ||
+      !reasoningLevel ||
+      provider.visibility === "hidden"
+    ) {
+      throw new Error("Incomplete generic provider or model configuration");
+    }
+    const builtin = await this.#zcodeBuiltinSource.read();
+    await this.#updatePersonal((current) => {
+      const existing = current.providers.getRule(providerId);
+      if (existing) {
+        // 原子提交后刷新可能失败；同一向导重试只能重放原内容，不能覆盖另一窗口的编辑。
+        const previousModel = current.models.getExact(providerId, modelId);
+        if (
+          existing.providerName !== providerName ||
+          JSON.stringify(existing.config.toJSON()) !== JSON.stringify(provider.toJSON()) ||
+          JSON.stringify(previousModel?.toJSON()) !== JSON.stringify(storedModel.toJSON())
+        ) {
+          throw new Error("Generic setup replay conflict");
+        }
+        return current;
+      }
+      if (builtin.providers.has(providerId)) throw new Error("Generic setup identity conflict");
+      const providers = current.providers.setRule({ providerId, providerName, config: provider });
+      assertProviderLabelMutationIsUnique(
+        providerId,
+        builtin.providers.overlay(current.providers),
+        builtin.providers.overlay(providers),
+      );
+      return {
+        ...current,
+        providers,
+        models: current.models.setExact(providerId, modelId, storedModel, false),
+        providerOrder: appendCurrentProviderOrder(
+          builtin.providers,
+          providers,
+          current.providerOrder,
+          providerId,
+        ),
+        defaultModelSelection: { providerId, modelId, options: { reasoningLevel } },
+      };
+    });
+    return Object.freeze({ providerId });
+  }
+
+  saveConfiguredDefault(
+    selection: ModelSelection,
+    membership: ProviderModelMembership,
+  ): Promise<ProviderConfigLayerSnapshot> {
+    return this.#updatePersonal((current) => {
+      assertMembershipCurrent(membership, selection.providerId, current);
+      return { ...current, defaultModelSelection: selection };
+    });
   }
 
   async savePersonalProviderOverlay(

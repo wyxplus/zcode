@@ -111,7 +111,18 @@ describe("Todo104 最终规则数据合同", () => {
     for (const enabled of [undefined, null, false, true]) {
       expect(manualModelConfigSchema.safeParse({ ...manual, enabled }).success).toBe(true);
     }
-    const paths = leafPaths(manual).filter((path) => path[0] !== "enabled");
+    const paths = leafPaths(manual).filter(
+      (path) => path[0] !== "enabled" && path.join(".") !== "properties.supportsToolCall",
+    );
+    const legacyManual = structuredClone(manual);
+    delete legacyManual.properties.supportsToolCall;
+    expect(manualModelConfigSchema.safeParse(legacyManual).success).toBe(true);
+    expect(
+      manualModelConfigSchema.safeParse({
+        ...manual,
+        properties: { ...manual.properties, supportsToolCall: null },
+      }).success,
+    ).toBe(false);
     for (const path of paths) {
       for (const missing of [undefined, null]) {
         const candidate = structuredClone(manual) as Record<string, unknown>;

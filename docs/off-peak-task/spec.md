@@ -107,7 +107,7 @@ interface ZCodeOffPeakTask {
 存储：tasks-index.sqlite 表 `off_peak_tasks`（复用 AutomationRepo 的库与 Repo 模式）。
 新增列使用 `ensureColumn` 兼容迁移，禁止重建或清空用户现有表。
 
-2026-09-10 存储裁决（[Todo104 §6.18.1](../working-memory/provider-refactor/steps/todo-104-pre-release-schema-review.md)）：
+2026-09-10 存储裁决（[Todo104 §6.18.1](../model-provider/architecture.md)）：
 新版 `model_selection` 是迁移后的选择权威。编辑标题、指令、权限或新版选择时，不清空或反向更新
 旧 `model` / `thought_level` 列；原值只供旧版回滚读取。新记录不伪造旧值。
 本项不改变 queued/paused 编辑门禁、Ticket 绑定及执行前校验，也不让新版从保留列重新选模。
@@ -576,4 +576,4 @@ setCustomSessionTitle）；卡片活状态订阅；本地额度计数；绑定/�
 
 查询失败或未知继续禁入；不把旧资格与新额度拼接。Provider 更新不修改表单草稿、已绑定
 Ticket 或执行中的模型。不新增轮询、不扩大手机/远程闲时支持，也不恢复当前未挂载的首页
-入口。具体影响面与 S1–Q5 验收见 [Todo128 影响面](../working-memory/provider-refactor/steps/todo-128-impact-and-cases.md)。
+入口。具体影响面与 S1–Q5 验收见 [Todo128 影响面](../model-provider/architecture.md)。

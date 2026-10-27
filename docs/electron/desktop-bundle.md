@@ -73,9 +73,39 @@ pnpm bundle:desktop -- win arm64
 
 ```bash
 ZCODE_TARGET_OS=linux ZCODE_TARGET_ARCH=x64 pnpm bundle:desktop
+```
 
 正式发版打包不再注入可配置的 generic update feed。新版客户端运行时使用服务端 manifest provider；`electron-builder` 的 generic `publish.url` 只保留本地占位，真实更新检查接口由默认 endpoint 或 `ZCODE_UPDATE_FEED_URL` 覆盖。
+
+### GitHub Actions Windows x64 安装包
+
+`.github/workflows/windows-installer.yml` 是 GitHub Windows 安装包的构建入口。
+推送 `main`、`codex/windows-installer` 或手动运行该工作流时，在 `windows-2022`
+runner 上构建当前提交，生成未签名的 NSIS `.exe` 安装包。Node 与 pnpm 版本跟随
+根目录 `mise.toml`，依赖安装使用冻结的 `pnpm-lock.yaml`。
+
+GitHub Actions run 持有构建状态，安装包内容仍由既有 desktop 打包脚本负责。
+每次 run 以提交 SHA 标识源码，依次安装依赖、准备本地运行资源、构建应用、打包并执行
+现有产物检查，最后保存 artifact；重试重新构建同一提交，不修改源码或正式更新源。
+
+```text
+push / workflow_dispatch → 指定提交 → Windows runner
+  → frozen install → prepare:desktop-runtime → build:no-runtime-assets
+  → bundle --skip-prepare --skip-build → 产物检查 → Actions artifact
 ```
+
+- `ZCODE_ENV=production` 明确选择生产默认配置与正式产品身份。
+- `ZCODE_TARGET_OS=win`、`ZCODE_TARGET_ARCH=x64` 贯穿资源准备和打包。
+- `ZCODE_SKIP_REMOTE_ASSETS=1` 跳过与本次桌面安装包独立的远程资源发布。
+- `ZCODE_ENABLE_WINDOWS_SIGN=0`、`CSC_IDENTITY_AUTO_DISCOVERY=false` 禁用签名；
+  此入口不要求证书、私有源或发布令牌。
+- Electron 与 electron-builder 辅助工具使用官方 GitHub 下载地址。
+- 工作流仅有 `contents: read` 权限，产物保存 14 天，不创建 GitHub Release。
+- artifact 名为 `ZCode-windows-x64-<commit SHA>`，包含 `.exe`、`.blockmap` 和
+  `latest*.yml`；缺少安装包必须使工作流失败。
+
+验收以真实 Windows run 成功、安装包非空并可从 run 页面下载为准；`--dry-run`
+只校验参数，不能替代实际构建。安装、启动与卸载的交互验证仍须在 Windows 上完成。
 
 ## 预检查
 
@@ -87,7 +117,7 @@ pnpm bundle:desktop -- --os linux --arch x64 --dry-run
 
 ## CI 拆阶段打包
 
-GitLab CI 里会先单独执行资源准备和桌面端 build，再调用 bundle 真正出安装包。
+CI 可以先单独执行资源准备和桌面端 build，再调用 bundle 真正出安装包。
 这时可以用下面两个参数跳过重复步骤：
 
 ```bash

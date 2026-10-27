@@ -3,9 +3,9 @@
 > **历史设计说明（2026-08-24）**：本文记录 Provider Refactor 之前的模型层设计，文中的
 > mutable AI SDK Registry、Model Catalog、`models.dev`、按 modelId 推导能力/思考档位和
 > `providerOptionsByLevel` Runtime 投影均已退役，不再是当前实现契约。当前权威设计见
-> [Model Contract](../../../../../../docs/working-memory/provider-refactor/design/model/contract.md)、
-> [Registry Configuration](../../../../../../docs/working-memory/provider-refactor/design/registry/configuration.md)
-> 与 [Model Creation](../../../../../../docs/working-memory/provider-refactor/design/registry/model-creation.md)。
+> [Model Contract](../../../../../../docs/model-provider/architecture.md)、
+> [Registry Configuration](../../../../../../docs/model-provider/architecture.md)
+> 与 [Model Creation](../../../../../../docs/model-provider/architecture.md)。
 > 本文后续内容只保留为历史背景，不能作为新增实现依据。
 
 ## 文档定位
@@ -638,7 +638,7 @@ cost?
 This early metadata sketch is superseded for input/output formats. Current
 runtime format facts use the complete Active Model
 `properties.input_format` / `properties.output_format` contract documented in
-`docs/working-memory/provider-refactor/design/model/input-output-format.md`.
+`docs/model-provider/input-output-format.md`.
 
 来源：
 

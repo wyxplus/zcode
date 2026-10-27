@@ -1,0 +1,85 @@
+name: Windows installer
+
+on:
+  push:
+    branches:
+      - main
+      - codex/windows-installer
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-installer-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Windows x64 NSIS
+    runs-on: windows-2022
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      HUSKY: "0"
+      ZCODE_ENV: production
+      ZCODE_TARGET_OS: win
+      ZCODE_TARGET_ARCH: x64
+      ZCODE_SKIP_REMOTE_ASSETS: "1"
+      ZCODE_ENABLE_WINDOWS_SIGN: "0"
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      ELECTRON_MIRROR: https://github.com/electron/electron/releases/download/
+      ELECTRON_BUILDER_BINARIES_MIRROR: https://github.com/electron-userland/electron-builder-binaries/releases/download/
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.2
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.14.0
+          cache: pnpm
+
+      - name: Check Node.js version
+        run: pnpm ci:assert-node
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare desktop runtime
+        run: pnpm prepare:desktop-runtime
+
+      - name: Build desktop application
+        run: pnpm --filter @zcode/desktop build:no-runtime-assets
+
+      - name: Package Windows installer
+        run: pnpm bundle:desktop -- --os win --arch x64 --skip-prepare --skip-build
+
+      - name: Verify installer exists
+        run: |
+          $installers = @(Get-ChildItem packages/desktop/dist/*.exe)
+          if ($installers.Count -eq 0 -or ($installers | Where-Object Length -eq 0)) {
+            throw "No non-empty Windows installer was generated."
+          }
+          $installers | Get-FileHash -Algorithm SHA256 | Format-Table -AutoSize
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZCode-windows-x64-${{ github.sha }}
+          path: |
+            packages/desktop/dist/*.exe
+            packages/desktop/dist/*.blockmap
+            packages/desktop/dist/latest*.yml
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14

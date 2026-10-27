@@ -87,6 +87,7 @@ describe("provider-node private config codecs", () => {
     const output = encodeProviderConfigFile(decodeProviderConfigFile(input));
     expect(output).toEqual({
       ...input,
+      schemaVersion: 2,
       config: {
         ...input.config,
         modelConfigRules: {
@@ -127,7 +128,7 @@ describe("provider-node private config codecs", () => {
 
     const encoded = encodeProviderConfigFile(update);
     expect(encoded).toEqual({
-      schemaVersion: 1,
+      schemaVersion: 2,
       config: {
         providerConfigRules: {
           providerRules: [
@@ -148,7 +149,7 @@ describe("provider-node private config codecs", () => {
       UnsupportedProviderConfigVersionError,
     );
     expect(() =>
-      decodeProviderConfigFile({ schemaVersion: 2, providers: {}, modelConfigRules: [] }),
+      decodeProviderConfigFile({ schemaVersion: 3, providers: {}, modelConfigRules: [] }),
     ).toThrow(UnsupportedProviderConfigVersionError);
     expect(() =>
       decodeProviderConfigFile({
@@ -187,7 +188,7 @@ describe("provider-node private config codecs", () => {
 
     expect(encoded.config.defaultModelSelection).toEqual(selection);
     expect(decodeProviderConfigFile(encoded).defaultModelSelection).toEqual(selection);
-    expect(() => decodeProviderConfigFile({ schemaVersion: 2 })).toThrow(
+    expect(() => decodeProviderConfigFile({ schemaVersion: 3 })).toThrow(
       UnsupportedProviderConfigVersionError,
     );
   });

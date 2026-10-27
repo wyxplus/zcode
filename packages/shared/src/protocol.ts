@@ -250,6 +250,8 @@ export interface ResourceUsageSnapshot {
 }
 
 export interface AppSettings {
+  /** 首次模型配置可跨启动跳过；不代表存在可执行模型或官方身份。 */
+  modelSetupSkipped?: boolean;
   /** 当前 App/Host 不再显示提交前体验套餐推荐；不改变任何入口的模型选择。 */
   startPlanRecommendationDismissed?: boolean;
   recentProjects: string[]; // 最近项目列表，最多保留 10 个

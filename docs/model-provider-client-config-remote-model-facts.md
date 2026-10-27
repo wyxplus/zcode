@@ -2,7 +2,7 @@
 
 > 状态：自 2026-08-22 的 Provider M3 收口起废止。
 >
-> 当前设计事实源：`docs/working-memory/provider-refactor/steps/03-staging-integration.md`。
+> 当前设计事实源：`docs/model-provider/architecture.md`。
 
 ## 结论
 

@@ -394,7 +394,11 @@ export class ModelConfigRules {
         // 清空整份基线会既丢失系统映射，也迫使 UI 把旧模型的隐藏配置复制进个人规则。
         result = (
           rule.type === "manual-provider-model"
-            ? ModelConfig.fromData(clearManualModelConfig(result.toJSON()))
+            ? ModelConfig.fromData(
+                clearManualModelConfig(result.toJSON(), {
+                  preserveToolSupport: rule.config.properties?.supportsToolCall === undefined,
+                }),
+              )
             : result
         ).overlay(rule.config);
         continue;

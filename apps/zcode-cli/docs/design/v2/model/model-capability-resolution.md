@@ -35,7 +35,7 @@ Config 与 Personal Model Config Rules。
 
 当前规范见：
 
-- [`configuration.md`](../../../../../docs/working-memory/provider-refactor/design/registry/configuration.md)
-- [`registry.md`](../../../../../docs/working-memory/provider-refactor/design/registry/registry.md)
-- [`model-creation.md`](../../../../../docs/working-memory/provider-refactor/design/registry/model-creation.md)
-- [`contract.md`](../../../../../docs/working-memory/provider-refactor/design/model/contract.md)
+- [`configuration.md`](../../../../../../docs/model-provider/architecture.md)
+- [`registry.md`](../../../../../../docs/model-provider/architecture.md)
+- [`model-creation.md`](../../../../../../docs/model-provider/architecture.md)
+- [`contract.md`](../../../../../../docs/model-provider/architecture.md)

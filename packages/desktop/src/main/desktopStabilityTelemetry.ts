@@ -897,12 +897,6 @@ function attachWebContentsStabilityWatch(
 
 export function configureDesktopStabilityTelemetry(context: StabilityGlobalContext): void {
   globalContext = context;
-  armsRum.setConfig("properties", {
-    device_mid: context.deviceMid,
-    platform: normalizeOsCategory(context.platform),
-    app_version: context.appVersion,
-    arms_env: context.armsEnv,
-  });
 }
 
 /** 与 @arms/rum-electron pv-collector 的 initial_load 窗口对齐，避免早于首屏 PV 单独 flush */

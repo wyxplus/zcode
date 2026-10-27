@@ -21,11 +21,7 @@ nodes:
     kind: "capability"
     label: "Approval full access updates task and pending input permissions"
     aliases: ["完全访问", "审批权限同步", "fullAccess"]
-    docs:
-      [
-        "docs/permission-project-approval.md",
-        "docs/working-memory/provider-refactor/steps/todo-158-permission-dialog-full-access-and-queued-mode.md",
-      ]
+    docs: ["docs/permission-project-approval.md", "docs/permission-approval-queue-mode.md"]
     codeSeeds:
       - file: "apps/zcode-cli/packages/core/src/runtime/permission-full-access.ts"
         symbol: "grantPermissionFullAccess"
@@ -393,26 +389,13 @@ nodes:
       - "x-preview-f-free"
     docs:
       - "docs/product-capability-map.md"
-      - "docs/working-memory/provider-refactor/steps/03-staging-integration.md"
-      - "docs/working-memory/provider-refactor/design/registry/configuration.md"
-      - "docs/working-memory/provider-refactor/design/registry/provider-and-model-configuration-overview.md"
-      - "docs/working-memory/provider-refactor/design/registry/request-compatibility-and-access-protocols.md"
-      - "docs/working-memory/provider-refactor/design/registry/model-membership-and-enablement.md"
-      - "docs/working-memory/provider-refactor/design/registry/zcode-builtin-provider-config.md"
-      - "docs/working-memory/provider-refactor/design/model/input-output-format.md"
-      - "docs/working-memory/provider-refactor/design/model/model-option-map.md"
-      - "docs/working-memory/provider-refactor/design/model/option-map-writing-style.md"
-      - "docs/working-memory/provider-refactor/steps/todo-98-builtin-option-map-formatting-regression.md"
-      - "docs/working-memory/provider-refactor/steps/todo-95-builtin-reasoning-map-simplification-and-fallback.md"
-      - "docs/working-memory/provider-refactor/steps/todo-03-provider-model-ownership-and-property-totality.md"
-      - "docs/working-memory/provider-refactor/steps/todo-14-post-refactor-mechanical-zero.md"
-      - "docs/working-memory/provider-refactor/steps/todo-55-provider-template-inheritance-cutover.md"
-      - "docs/model-provider-opencode-config.md"
+      - "docs/model-provider/architecture.md"
+      - "docs/model-provider/input-output-format.md"
+      - "docs/model-provider/model-option-map.md"
       - "docs/model-request-output-tokens.md"
       - "docs/superpowers/specs/2026-07-10-glm-52-suffixed-variant-media-fallback-design.md"
       - "docs/superpowers/specs/2026-07-17-kimi-k3-model-adapter-design.md"
       - "docs/superpowers/specs/2026-08-14-glm-5-3-model-adapter-design.md"
-      - "docs/superpowers/specs/2026-08-21-model-provider-modality-settings-design.md"
     codeSeeds:
       - symbol: "ModelInputFormatConfig"
         file: "packages/provider/src/config/model-config.ts"
@@ -451,19 +434,9 @@ nodes:
       - "切换模型"
     docs:
       - "docs/ui/chat-model-select-menu.md"
-      - "docs/chat/manual-model-switch-resolution-chain.md"
+      - "docs/model-provider/selection-state.md"
       - "docs/chat/new-task-model-resolution-chain.md"
-      - "docs/working-memory/provider-refactor/steps/todo-12-model-selection-validation-boundary-cutover.md"
-      - "docs/working-memory/provider-refactor/steps/todo-13-target-host-model-selection-authority.md"
-      - "docs/working-memory/provider-refactor/steps/todo-14-post-refactor-mechanical-zero.md"
-      - "docs/working-memory/provider-refactor/design/interaction/selection-state.md"
-      - "docs/working-memory/provider-refactor/steps/todo-34-model-selection-async-state-and-repo-wiki-draft.md"
-      - "docs/working-memory/provider-refactor/steps/todo-68-active-model-context-single-source.md"
-      - "docs/working-memory/provider-refactor/steps/todo-87-selection-view-unified-resolution.md"
-      - "docs/working-memory/provider-refactor/steps/todo-95-builtin-reasoning-map-simplification-and-fallback.md"
-      - "docs/working-memory/provider-refactor/steps/todo-96-selection-offline-migration-and-resolution-consolidation.md"
-      - "docs/working-memory/provider-refactor/steps/todo-97-subagent-markdown-in-place-migration-and-legacy-read-audit.md"
-      - "docs/working-memory/provider-refactor/steps/todo-99-worker-account-selection-repair.md"
+      - "docs/model-provider/architecture.md"
     codeSeeds:
       - symbol: "ModelSelectionFacade"
         file: "packages/provider/src/facades.ts"
@@ -496,10 +469,7 @@ nodes:
       - "供应商模板"
       - "模板创建供应商"
     docs:
-      - "docs/working-memory/provider-refactor/design/registry/configuration.md"
-      - "docs/working-memory/provider-refactor/design/registry/provider-and-model-configuration-overview.md"
-      - "docs/working-memory/provider-refactor/steps/todo-55-provider-template-inheritance-cutover.md"
-      - "docs/working-memory/provider-refactor/steps/todo-61-provider-template-picker-and-brand-metadata.md"
+      - "docs/model-provider/architecture.md"
     codeSeeds:
       - symbol: "ProviderTemplateMap"
         file: "packages/provider/src/config/provider-config.ts"
@@ -531,9 +501,8 @@ nodes:
       - "docs/usage-stats-app-coding-plan-split.md"
       - "docs/zai-start-plan-provider.md"
       - "docs/model-provider-family-merge.md"
-      - "docs/input-model-provider-team-plan-linkage.md"
-      - "docs/working-memory/provider-refactor/steps/todo-32-team-plan-settings-effective-provider-boundary.md"
-      - "docs/working-memory/provider-refactor/steps/todo-51-provider-access-consumer-and-offpeak-auth-closeout.md"
+      - "docs/model-provider/selection-state.md"
+      - "docs/model-provider/architecture.md"
     codeSeeds:
       - symbol: "ModelProviderSectionDetail"
         file: "packages/ui/src/settings/model-provider-section/Detail.tsx"
@@ -1203,7 +1172,7 @@ nodes:
       - "Host 外部 API 代理"
       - "Host 网络出口"
     docs:
-      - "docs/superpowers/specs/2026-08-25-host-api-proxy-design.md"
+      - "docs/host-api-proxy.md"
       - "docs/architecture/external-api-client.md"
       - "apps/zcode-cli/docs/design/v2/model/http-proxy.md"
     codeSeeds:
@@ -1389,10 +1358,7 @@ nodes:
       - "闲时模型"
       - "闲时任务模型执行"
     docs:
-      - "docs/working-memory/provider-refactor/steps/04-model-execution-cutover.md"
-      - "docs/working-memory/provider-refactor/design/execution/execution.md"
-      - "docs/working-memory/provider-refactor/design/registry/model-creation.md"
-      - "docs/working-memory/provider-refactor/design/registry/zcode-builtin-provider-config.md"
+      - "docs/model-provider/architecture.md"
       - "docs/off-peak-task/spec.md"
     codeSeeds:
       - symbol: "buildOffPeakRequestAuth"
@@ -1465,10 +1431,8 @@ nodes:
     docs:
       - "docs/subagents-built-in-model-overrides.md"
       - "docs/subagent-session-side-tabs.md"
-      - "docs/working-memory/provider-refactor/steps/todo-97-subagent-markdown-in-place-migration-and-legacy-read-audit.md"
-      - "docs/working-memory/provider-refactor/design/execution/execution.md"
-      - "docs/working-memory/provider-refactor/steps/04-model-execution-cutover.md"
-      - "docs/superpowers/plans/2026-07-06-subagent-permission-delegation.md"
+      - "docs/model-provider/architecture.md"
+      - "apps/zcode-cli/docs/design/v2/tool/07-subagent.md"
     codeSeeds:
       - symbol: "AgentInputSchema"
         file: "apps/zcode-cli/packages/contracts/src/tools/agent.ts"
@@ -1500,32 +1464,9 @@ nodes:
       - "模型供应商"
       - "自定义 provider"
     docs:
-      - "docs/working-memory/provider-refactor/steps/03-staging-integration.md"
-      - "docs/working-memory/provider-refactor/design/design.md"
-      - "docs/working-memory/provider-refactor/design/registry/configuration.md"
-      - "docs/working-memory/provider-refactor/design/registry/registry.md"
-      - "docs/working-memory/provider-refactor/design/registry/model-membership-and-enablement.md"
-      - "docs/working-memory/provider-refactor/design/registry/model-creation.md"
-      - "docs/working-memory/provider-refactor/steps/04-model-execution-cutover.md"
-      - "docs/working-memory/provider-refactor/steps/todo-03-provider-model-ownership-and-property-totality.md"
-      - "docs/working-memory/provider-refactor/research/model-abstraction-unification-cleanup-audit.md"
-      - "docs/working-memory/provider-refactor/steps/todo-00-model-abstraction-unification-roadmap.md"
-      - "docs/working-memory/provider-refactor/steps/todo-01-core-model-adapter-boundary-cleanup.md"
-      - "docs/working-memory/provider-refactor/steps/todo-02-ai-sdk-execution-registry-retirement.md"
-      - "docs/working-memory/provider-refactor/steps/todo-04-core-model-connection-port-retirement.md"
-      - "docs/working-memory/provider-refactor/steps/todo-05-model-ref-retirement.md"
-      - "docs/working-memory/provider-refactor/steps/todo-07-account-connection-selection-and-access-context-cutover.md"
-      - "docs/working-memory/provider-refactor/steps/todo-10-zcode-builtin-provider-config-naming-cutover.md"
-      - "docs/working-memory/provider-refactor/steps/todo-12-model-selection-validation-boundary-cutover.md"
-      - "docs/working-memory/provider-refactor/steps/todo-13-target-host-model-selection-authority.md"
-      - "docs/working-memory/provider-refactor/steps/todo-20-account-overlay-atomicity-and-review-closeout.md"
-      - "docs/working-memory/provider-refactor/steps/todo-21-zcode-builtin-config-ownership-and-model-activation-order.md"
-      - "docs/working-memory/provider-refactor/steps/todo-32-team-plan-settings-effective-provider-boundary.md"
-      - "docs/working-memory/provider-refactor/steps/todo-51-provider-access-consumer-and-offpeak-auth-closeout.md"
-      - "docs/working-memory/provider-refactor/steps/todo-55-provider-template-inheritance-cutover.md"
+      - "docs/model-provider/architecture.md"
       - "docs/model-provider-presets.md"
       - "docs/model-provider-config-overrides.md"
-      - "docs/model-provider-catalog-metadata.md"
     codeSeeds:
       - file: "packages/provider/src/index.ts"
       - symbol: "ProviderConfigResolver"
@@ -1699,7 +1640,6 @@ nodes:
     docs:
       - "docs/remote/provider-provisioning.md"
       - "docs/remote-workspace-session-unified-settings.md"
-      - "docs/working-memory/provider-refactor/steps/todo-56-remote-provider-provisioning-environment-sync.md"
     codeSeeds:
       - symbol: "ProviderProvisioningEnvironmentCoordinator"
         file: "packages/desktop/src/main/providerProvisioningEnvironmentCoordinator.ts"
@@ -1819,7 +1759,7 @@ nodes:
     docs:
       - "docs/task/task-sqlite-index.md"
       - "docs/task/task-snapshot-on-demand.md"
-      - "docs/working-memory/provider-refactor/steps/todo-109-database-migration-consolidation-and-rollback-readability.md"
+      - "docs/model-provider/architecture.md"
       - "docs/desktop/database-migration-startup-gate-plan.md"
 
   - id: "capability.desktop-app-shutdown"
@@ -1852,8 +1792,6 @@ nodes:
     docs:
       - "docs/desktop/startup-critical-path.md"
       - "docs/desktop/database-migration-startup-gate-plan.md"
-      - "docs/desktop/database-startup-plan-review.md"
-      - "docs/working-memory/provider-refactor/steps/todo-145-global-database-startup-loading.md"
     codeSeeds:
       - symbol: "prepareRuntimeProcessEnvPatch"
         file: "packages/services/src/runtime-tools/runtimeCommandEnv.ts"
@@ -2327,7 +2265,7 @@ nodes:
     docs:
       - "docs/subagent-session-side-tabs.md"
       - "docs/v4-composer-api-retry-status.md"
-      - "docs/chat/manual-model-switch-resolution-chain.md"
+      - "docs/model-provider/selection-state.md"
     codeSeeds:
       - symbol: "SubagentSessionSidePane"
         file: "packages/ui/src/app-shell/SubagentSessionSidePane.tsx"
@@ -2552,18 +2490,9 @@ nodes:
     kind: "ui-surface"
     label: "Model provider settings and model capability editor"
     docs:
-      - "docs/working-memory/provider-refactor/steps/todo-98-builtin-option-map-formatting-regression.md"
-      - "docs/working-memory/provider-refactor/steps/todo-93-account-plan-loss-manual-switch.md"
-      - "docs/working-memory/provider-refactor/steps/todo-92-model-smart-config-and-override-feedback.md"
-      - "docs/working-memory/provider-refactor/steps/todo-91-connectivity-probe-prompt-contract.md"
-      - "docs/working-memory/provider-refactor/steps/todo-90-model-add-edit-shared-recommended-draft.md"
+      - "docs/model-provider/architecture.md"
       - "docs/superpowers/specs/2026-06-04-model-provider-model-editor-design.md"
-      - "docs/superpowers/specs/2026-08-21-model-provider-modality-settings-design.md"
-      - "docs/working-memory/provider-refactor/design/registry/model-membership-and-enablement.md"
-      - "docs/working-memory/provider-refactor/design/registry/provider-and-model-configuration-overview.md"
-      - "docs/working-memory/provider-refactor/design/registry/settings.md"
-      - "docs/working-memory/provider-refactor/steps/todo-21-zcode-builtin-config-ownership-and-model-activation-order.md"
-      - "docs/working-memory/provider-refactor/steps/todo-61-provider-template-picker-and-brand-metadata.md"
+      - "docs/model-provider/input-output-format.md"
     codeSeeds:
       - symbol: "ModelProviderSection"
         file: "packages/ui/src/settings/ModelProviderSection.tsx"
@@ -3012,7 +2941,7 @@ nodes:
     kind: "persistence"
     label: "Sparse Personal provider membership, order and exact model configuration"
     docs:
-      - "docs/working-memory/provider-refactor/design/registry/settings.md"
+      - "docs/model-provider/architecture.md"
     codeSeeds:
       - symbol: "NodePersonalProviderConfigRepository"
         file: "packages/provider-node/src/personal-provider-config-repository.ts"
@@ -3055,8 +2984,7 @@ nodes:
     kind: "service"
     label: "Target Workspace Host model selection service"
     docs:
-      - "docs/working-memory/provider-refactor/steps/todo-13-target-host-model-selection-authority.md"
-      - "docs/working-memory/provider-refactor/steps/todo-34-model-selection-async-state-and-repo-wiki-draft.md"
+      - "docs/model-provider/architecture.md"
     codeSeeds:
       - symbol: "IModelSelectionService"
         file: "packages/services/src/model-provider/providerFacadeServices.ts"
@@ -3526,7 +3454,7 @@ nodes:
     kind: "service"
     label: "Window Host lifecycle-scoped app-managed API network transport"
     docs:
-      - "docs/superpowers/specs/2026-08-25-host-api-proxy-design.md"
+      - "docs/host-api-proxy.md"
     codeSeeds:
       - symbol: "NodeApiClient"
         file: "packages/services/src/providers/api/nodeApiClient.ts"
@@ -4458,7 +4386,7 @@ nodes:
     kind: "evidence"
     label: "Host API proxy, No Proxy, custom CA, lifecycle, and remote-authority tests"
     docs:
-      - "docs/superpowers/specs/2026-08-25-host-api-proxy-design.md"
+      - "docs/host-api-proxy.md"
     codeSeeds:
       - file: "packages/services/test/nodeApiClient.test.ts"
       - file: "packages/services/test/nodeApiClientEndpoint.test.ts"
@@ -4934,7 +4862,7 @@ nodes:
     kind: "ui-surface"
     label: "Desktop Share URL handover task"
     docs:
-      - "docs/working-memory/provider-refactor/steps/todo-139-share-import-new-task-selection.md"
+      - "docs/conversation-share-v1.md"
     invariants:
       - "Only reused=false import results seed an independent Composer draft before activation, keyed by the returned workspace identity. Copy initialized Root selection only; otherwise use the ordinary new-task Recent/default initializer after the View is ready. Empty history is not an import marker; user edits and reused sessions win. Import never updates Recent or waits for model execution."
     codeSeeds:
@@ -4996,7 +4924,12 @@ nodes:
     kind: "capability"
     label: "Bot group and topic collaboration"
     aliases: ["群聊机器人", "话题续接", "ReplyToChannel", "渠道提及", "Bot 历史附件"]
-    docs: ["docs/bots-feishu-group-collaboration.md", "docs/bots-topic-input-materials.md", "docs/testing/bots-e2e-coverage-matrix.md"]
+    docs:
+      [
+        "docs/bots-feishu-group-collaboration.md",
+        "docs/bots-topic-input-materials.md",
+        "docs/testing/bots-e2e-coverage-matrix.md",
+      ]
     codeSeeds:
       - file: "packages/services/src/bots/botsService.ts"
         symbol: "createBotsService"
@@ -5019,7 +4952,71 @@ nodes:
       - file: "packages/ui/src/v4/BotTopicPreparation.tsx"
         symbol: "BotTopicPreparationList"
 
+  - id: "capability.generic-api-only-workbench-plan"
+    kind: "capability"
+    label: "Staged generic API-only workbench without official account cloud businesses"
+    aliases:
+      ["首次免注册", "移除官方登录", "三协议 API", "任意厂商 API", "generic-api-only-workbench"]
+    docs:
+      - "docs/specs/generic-api-only-workbench/README.md"
+      - "docs/specs/generic-api-only-workbench/implementation-phases.md"
+      - "docs/specs/generic-api-only-workbench/migration-and-acceptance.md"
+    codeSeeds:
+      - file: "packages/ui/src/root/useProviderAvailabilityLoginEntryGuard.ts"
+        symbol: "useProviderAvailabilityLoginEntryGuard"
+      - file: "packages/provider/src/facades.ts"
+        symbol: "ProviderSettingsFacade"
+      - file: "packages/provider-node/src/provider-config-file-codec.ts"
+        symbol: "decodeProviderConfigFile"
+      - file: "apps/zcode-cli/packages/adapters/src/model/official-coding-plan-gateway.ts"
+        symbol: "createStaticProviderEndpointRoutingPort"
+      - file: "packages/ui/src/settings/model-provider-section/ProviderAuthModeFields.tsx"
+        symbol: "ProviderAuthModeFields"
+      - file: "apps/zcode-cli/packages/adapters/src/model/model-auth-fetch.ts"
+        symbol: "createModelAuthFetch"
+      - file: "packages/ui/src/model-setup/ModelSetupPage.tsx"
+        symbol: "ModelSetupPage"
+      - file: "packages/ui/src/hooks/useModelSetup.ts"
+        symbol: "useModelSetup"
+      - file: "packages/provider-node/src/personal-config-migration.ts"
+        symbol: "preparePersonalConfigMigration"
+      - file: "packages/services/src/model-provider/providerProvisioningTarget.ts"
+        symbol: "createProviderProvisioningTarget"
+    invariants:
+      - "Staged on v3.15.1: D01-D05 confirmed; S1 generic auth, headers, direct ordinary API routing and manual capabilities implemented. S2 setup/default/skip and S3 Personal v2/provisioning v3 boundaries are implemented; D01 cloud SDK bootstrap is disabled. Full producer/credential retirement and migration completion remain pending; current OAuth/cloud nodes stay until source retirement."
+      - "Target APIs use exactly anthropic-messages, openai-chat-completions or openai-responses and explicit provider identity; protocol compatibility does not grant dynamic auth compatibility."
+      - "Retirement preserves local history, ordinary automations, MCP OAuth, SSH, Bots, QR pairing and Host owner/lease; configured defaults do not overwrite explicit session or background selections."
+      - "Public distribution and relay are a separate scope decision; account retirement must not silently remove their independent auth or allow cloud producer resurrection."
+
 edges:
+  - from: "capability.generic-api-only-workbench-plan"
+    to: "capability.provider-registry"
+    type: "plans-configuration-cutover"
+    rank: "must-inspect"
+    condition: "S1 generic auth and capability editing implemented; account-derived source removal remains S5. Keep ordinary vendor API templates."
+  - from: "capability.generic-api-only-workbench-plan"
+    to: "capability.model-selection"
+    type: "plans-default-write"
+    rank: "must-inspect"
+    condition: "Planned only: write configured default through the same Personal Repository; preserve explicit session/automation/Subagent selections."
+  - from: "capability.generic-api-only-workbench-plan"
+    to: "capability.remote-provider-provisioning"
+    type: "plans-versioned-migration"
+    rank: "must-inspect"
+    condition: "Planned v3 envelope: generic private config only; incompatible peers refuse before secrets or writes; Target remains owner."
+  - from: "capability.generic-api-only-workbench-plan"
+    to: "boundary.zcode-cli-provider-transport"
+    type: "plans-direct-endpoint-routing"
+    rank: "must-inspect"
+    condition: "S1 ordinary configured APIs bypass official endpoint routing, none/custom auth blocks SDK env keys; legacy account-only routing remains until S5."
+  - from: "capability.generic-api-only-workbench-plan"
+    to: "boundary.desktop-continuous"
+    type: "preserves-delivery-contract"
+    rank: "invariant-only"
+  - from: "capability.generic-api-only-workbench-plan"
+    to: "boundary.web-remote-replayable"
+    type: "preserves-delivery-contract"
+    rank: "invariant-only"
   - from: "capability.permission-full-access"
     to: "surface.permission-full-access"
     type: "renders-in"

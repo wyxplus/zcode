@@ -10,6 +10,7 @@ import type { ModelConnectivityResult } from "@zcode/shared";
 import {
   isApiKeyAccess,
   type ProviderApiType,
+  type ProviderAuthMode,
   type SavePersonalModelDraftInput,
 } from "@zcode/provider";
 import { logger } from "@/logger.js";
@@ -17,7 +18,12 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { Switch } from "@/components/ui/switch.js";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { isImeComposingKeyEvent } from "@/lib/imeComposition.js";
-import { resolvePendingProviderDraftSave, type ProviderDraftValues } from "./ProviderDraftSave.js";
+import {
+  resolvePendingProviderDraftSave,
+  formatProviderHeadersDraft,
+  type ProviderDraftValues,
+} from "./ProviderDraftSave.js";
+import { ProviderAuthModeFields } from "./ProviderAuthModeFields.js";
 import {
   ProviderApiKeySection,
   ProviderCardHeader,
@@ -192,6 +198,14 @@ export function InlineEditableProviderCard({
   );
   const [baseUrlValue, setBaseUrlValue] = useState(provider.config.api?.baseUrl ?? "");
   const [apiKeyValue, setApiKeyValue] = useState(getProviderFormApiKey(provider));
+  const [authMode, setAuthMode] = useState<ProviderAuthMode>(
+    isApiKeyAccess(provider.config.access)
+      ? (provider.config.access.authMode ?? "api-key")
+      : "api-key",
+  );
+  const [headersValue, setHeadersValue] = useState(
+    formatProviderHeadersDraft(provider.config.api?.headers),
+  );
   const [apiKeyVisible, setApiKeyVisible] = useState(false);
   const [savingEnabled, setSavingEnabled] = useState(false);
   const authoritativeModels = useMemo(
@@ -234,6 +248,10 @@ export function InlineEditableProviderCard({
     apiFormat: provider.config.api?.type ?? "anthropic-messages",
     baseUrlValue: provider.config.api?.baseUrl ?? "",
     apiKeyValue: getProviderFormApiKey(provider),
+    authMode: isApiKeyAccess(provider.config.access)
+      ? (provider.config.access.authMode ?? "api-key")
+      : "api-key",
+    headersValue: formatProviderHeadersDraft(provider.config.api?.headers),
   });
 
   useEffect(() => {
@@ -264,6 +282,16 @@ export function InlineEditableProviderCard({
     syncField("apiFormat", resolvedApiFormat, setApiFormat);
     syncField("baseUrlValue", resolvedBaseUrl, setBaseUrlValue);
     syncField("apiKeyValue", resolvedApiKey, setApiKeyValue);
+    syncField(
+      "authMode",
+      isApiKeyAccess(provider.config.access)
+        ? (provider.config.access.authMode ?? "api-key")
+        : "api-key",
+      (value) => setAuthMode(value ?? "api-key"),
+    );
+    syncField("headersValue", formatProviderHeadersDraft(provider.config.api?.headers), (value) =>
+      setHeadersValue(value ?? ""),
+    );
   }, [provider]);
 
   const markDraftDirty = useCallback((field: keyof ProviderDraftValues) => {
@@ -590,6 +618,31 @@ export function InlineEditableProviderCard({
     void commitPendingDraft("api-key-blur").catch(() => undefined);
   }, [commitPendingDraft]);
 
+  const handleAuthModeChange = useCallback(
+    (mode: ProviderAuthMode) => {
+      markDraftDirty("authMode");
+      draftRef.current.authMode = mode;
+      setAuthMode(mode);
+      if (mode !== "api-key") {
+        markDraftDirty("apiKeyValue");
+        draftRef.current.apiKeyValue = "";
+        setApiKeyValue("");
+      }
+      void commitPendingDraft("auth-mode-change").catch(() => undefined);
+    },
+    [markDraftDirty, commitPendingDraft],
+  );
+
+  const handleHeadersChange = useCallback(
+    (value: string) => {
+      markDraftDirty("headersValue");
+      draftRef.current.headersValue = value;
+      setHeadersValue(value);
+      scheduleIdleDraftSave();
+    },
+    [markDraftDirty, scheduleIdleDraftSave],
+  );
+
   const handleTextCommitKeyDown = useCallback((event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key !== "Enter") {
       return;
@@ -826,7 +879,18 @@ export function InlineEditableProviderCard({
           />
         )}
 
-        {isApiKeyProvider ? (
+        {provider.config.access?.type === "api-key" ? (
+          <ProviderAuthModeFields
+            key={provider.providerId}
+            mode={authMode}
+            headersValue={headersValue}
+            onModeChange={handleAuthModeChange}
+            onHeadersChange={handleHeadersChange}
+            onHeadersBlur={saveConnection}
+          />
+        ) : null}
+
+        {isApiKeyProvider && authMode === "api-key" ? (
           <ProviderApiKeySection
             apiKeyValue={apiKeyValue}
             apiKeyVisible={apiKeyVisible}

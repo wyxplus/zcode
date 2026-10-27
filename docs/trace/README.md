@@ -26,18 +26,12 @@ Desktop Renderer Trace 只记录 Desktop UI 语义操作，不传播到 CLI；Us
 CLI 包内，分别描述本地 SQLite 事实源和本地调试设施。它们不属于 CLI Agent ARMS Trace Schema，
 可用于 Trace 对账和故障诊断。
 
-## 历史设计
-
-以下文档只用于追溯，不得作为新增 Span、Attribute、Event、Metric、查询或大盘的依据：
-
-- [V1 Model API 可观测设计](./archive/model-api-observability-v1.md)
-- [V2 Turn Trace 可观测设计](./archive/turn-trace-observability-v2.md)
-- [V4 → V5 升级设计](./archive/telemetry-v4-to-v5-upgrade-design.md)
+历史 V1、V2 与升级评审已由当前规范取代，原文通过 Git 追溯。
 
 ## 文档维护规则
 
 1. 整体原则、接入接口或系统边界变化时，更新核心规范。
 2. 新增或修改 Span、Attribute、Event、Metric、枚举、兼容别名、隐私或统计口径时，必须更新
    对应专题参考；完整字段字典必须随代码变更同步维护。
-3. 阶段性评审和迁移方案完成后移入 `archive/`，不在主目录保留多个版本。
-4. 代码、测试、ARMS 查询和 Dashboard 不得依赖归档文档。
+3. 阶段性评审和迁移方案默认留在对话；确需保存的未完成事项注明状态，完成后合并有效约束并删除过程文档，不另建 `archive/` 副本。
+4. 代码、测试、ARMS 查询和 Dashboard 只引用当前规范；历史细节通过 Git 追溯。

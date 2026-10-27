@@ -1,4 +1,4 @@
-// M3 竖切出口门禁（docs/v4-refactor/08-phasing.md M3）：
+// V4 会话主链路出口门禁（docs/v4-refactor/README.md）：
 // 单 pane「订阅 → 渲染 → 发送 → agent 输出中刷新恢复 → stop」全链路。
 // 证据层：L3（13-golden-test-mapping —— A 组 composer 冒烟 + B 组 stop 按钮态 + 刷新恢复跨进程链路）。
 // 状态语义的完整覆盖在 L1 reducer 黄金测试，这里只断言真实 UI 交互与跨进程恢复。
@@ -34,10 +34,7 @@ describe("v4 竖切 M3 门禁：订阅→渲染→发送→刷新恢复→stop",
     // ── 渲染：用户行 + assistant 流式行 ──
     await waitForV4TimelineContaining("E2E_V4_SLICE_TURN1");
     await waitForV4TimelineContaining("V4_TURN1_STREAMING", 45000);
-    await waitForV4Pane(
-      (snapshot) => snapshot.canStop,
-      "streaming 中没有出现 stop 按钮",
-    );
+    await waitForV4Pane((snapshot) => snapshot.canStop, "streaming 中没有出现 stop 按钮");
 
     // ── agent 输出中刷新（M3 门禁核心：renderer 重载，CLI/host 继续跑）──
     await browser.refresh();
@@ -50,24 +47,14 @@ describe("v4 竖切 M3 门禁：订阅→渲染→发送→刷新恢复→stop",
     // 恢复裁决 snapshot + 续流：历史行 + 完流文本都必须出现
     await waitForV4TimelineContaining("E2E_V4_SLICE_TURN1", 30000);
     await waitForV4TimelineContaining("V4_TURN1_DONE", 60000);
-    await waitForV4Pane(
-      (snapshot) => !snapshot.canStop,
-      "turn1 完流后 stop 按钮没有回收",
-    );
+    await waitForV4Pane((snapshot) => !snapshot.canStop, "turn1 完流后 stop 按钮没有回收");
 
     // ── stop：turn2 长尾慢流窗口内点 stop ──
     await sendV4Prompt("E2E_V4_SLICE_TURN2 保持输出");
     await waitForV4TimelineContaining("V4_TURN2_STREAMING", 45000);
-    await waitForV4Pane(
-      (snapshot) => snapshot.canStop,
-      "turn2 streaming 中没有出现 stop 按钮",
-    );
+    await waitForV4Pane((snapshot) => snapshot.canStop, "turn2 streaming 中没有出现 stop 按钮");
     await clickV4Stop();
-    await waitForV4Pane(
-      (snapshot) => !snapshot.canStop,
-      "stop 后 canStop 没有回收",
-      30000,
-    );
+    await waitForV4Pane((snapshot) => !snapshot.canStop, "stop 后 canStop 没有回收", 30000);
 
     // 已流出的部分文本保留（中断不清空 timeline）
     const finalSnapshot = await getV4PaneSnapshot();

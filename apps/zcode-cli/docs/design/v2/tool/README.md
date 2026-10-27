@@ -15,7 +15,7 @@
 7. [WebFetch](05-webfetch.md)
 8. [AskUserQuestion](06-ask-user-question.md)
 9. [Subagent](07-subagent.md)
-   - [Background Subagent 第一版实施规划（历史）](07-subagent-background-plan.md)
+   - [Background Subagent 第一版实施规划（历史）](07-subagent.md)
    - [RespondToCoordinator 当前契约](../../../../../../docs/subagent-respond-to-coordinator.md)
 10. [TodoRead / TodoWrite](10-todo.md)
 11. [Tool Input Normalization](12-input-normalization.md)
@@ -173,23 +173,23 @@ L3 已经补齐两个运行时闭环：
 
 ## 工具矩阵
 
-| Tool | 模型可见名称 | 模型可见范围 | 主要副作用 | 默认只读 | 并发安全 | 结果预算 |
-| --- | --- | --- | --- | --- | --- | --- |
-| Read | `Read` | 主智能体、Explore | 文件读取、read cache 更新、可附加图片/PDF meta message | 是 | 是 | 不落盘，内部自限 |
-| Write | `Write` | 主智能体 | 创建或完整覆盖文件、更新 read cache、file history、LSP/IDE 通知 | 否 | 否 | 100000 chars |
-| Edit | `Edit` | 主智能体 | 精确字符串替换、更新 read cache、file history、LSP/IDE 通知 | 否 | 否 | 100000 chars |
-| Bash | `Bash` | 主智能体 | 子进程、sandbox、cwd、背景任务、可能读写网络和系统 | 按命令动态判断 | 只读命令才安全 | 30000 chars |
-| Glob | `Glob` | 主智能体、Explore（临时） | 文件名和路径模式匹配 | 是 | 是 | 100000 chars |
-| Grep | `Grep` | 主智能体、Explore（临时） | 文件内容正则搜索 | 是 | 是 | 100000 chars |
-| WebFetch | `WebFetch` | 主智能体 | 网络 GET、二级模型处理、二进制落盘 | 是 | 是 | 100000 chars |
-| WebSearch | `WebSearch` / 内部 `web_search` | 主智能体、Explore | 内部模型请求触发 provider 侧 server-side web search | 是 | 是 | 100000 chars |
-| AskUserQuestion | `AskUserQuestion` | 主智能体 | 用户交互，权限 UI 收集答案 | 是 | 是 | 100000 chars |
-| Subagent | `Agent` / `Task` | 主智能体 | agent runtime、后台任务、worktree、transcript、被委托工具的副作用 | 编排层是，只读性需按子工具动态计算 | 编排层是，写入冲突由子工具和 task runtime 管 | 100000 chars |
-| Workflow | `Workflow` | 主智能体（仅显式用户 opt-in 后调用） | workflow run、子 session、后台 runner、session-scoped 脚本副本、被编排 agent 的 workspace 副作用 | 否 | 否 | 小结果，状态走 workflow tables |
-| EnterPlanMode | `EnterPlanMode` | 主智能体 | 请求用户同意并切换 session mode 到 plan | 否 | 否 | 100000 chars |
-| ExitPlanMode | `ExitPlanMode` | 主智能体 | 提交计划、请求用户同意并退出 plan mode | 否 | 否 | 100000 chars |
-| TodoRead | `TodoRead` | 主智能体 | session todo 状态读取 | 是 | 是 | 100000 chars |
-| TodoWrite | `TodoWrite` | 主智能体 | session todo 状态替换 | 是，session-only | 否 | 100000 chars |
+| Tool            | 模型可见名称                    | 模型可见范围                         | 主要副作用                                                                                       | 默认只读                           | 并发安全                                     | 结果预算                       |
+| --------------- | ------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------ | ---------------------------------- | -------------------------------------------- | ------------------------------ |
+| Read            | `Read`                          | 主智能体、Explore                    | 文件读取、read cache 更新、可附加图片/PDF meta message                                           | 是                                 | 是                                           | 不落盘，内部自限               |
+| Write           | `Write`                         | 主智能体                             | 创建或完整覆盖文件、更新 read cache、file history、LSP/IDE 通知                                  | 否                                 | 否                                           | 100000 chars                   |
+| Edit            | `Edit`                          | 主智能体                             | 精确字符串替换、更新 read cache、file history、LSP/IDE 通知                                      | 否                                 | 否                                           | 100000 chars                   |
+| Bash            | `Bash`                          | 主智能体                             | 子进程、sandbox、cwd、背景任务、可能读写网络和系统                                               | 按命令动态判断                     | 只读命令才安全                               | 30000 chars                    |
+| Glob            | `Glob`                          | 主智能体、Explore（临时）            | 文件名和路径模式匹配                                                                             | 是                                 | 是                                           | 100000 chars                   |
+| Grep            | `Grep`                          | 主智能体、Explore（临时）            | 文件内容正则搜索                                                                                 | 是                                 | 是                                           | 100000 chars                   |
+| WebFetch        | `WebFetch`                      | 主智能体                             | 网络 GET、二级模型处理、二进制落盘                                                               | 是                                 | 是                                           | 100000 chars                   |
+| WebSearch       | `WebSearch` / 内部 `web_search` | 主智能体、Explore                    | 内部模型请求触发 provider 侧 server-side web search                                              | 是                                 | 是                                           | 100000 chars                   |
+| AskUserQuestion | `AskUserQuestion`               | 主智能体                             | 用户交互，权限 UI 收集答案                                                                       | 是                                 | 是                                           | 100000 chars                   |
+| Subagent        | `Agent` / `Task`                | 主智能体                             | agent runtime、后台任务、worktree、transcript、被委托工具的副作用                                | 编排层是，只读性需按子工具动态计算 | 编排层是，写入冲突由子工具和 task runtime 管 | 100000 chars                   |
+| Workflow        | `Workflow`                      | 主智能体（仅显式用户 opt-in 后调用） | workflow run、子 session、后台 runner、session-scoped 脚本副本、被编排 agent 的 workspace 副作用 | 否                                 | 否                                           | 小结果，状态走 workflow tables |
+| EnterPlanMode   | `EnterPlanMode`                 | 主智能体                             | 请求用户同意并切换 session mode 到 plan                                                          | 否                                 | 否                                           | 100000 chars                   |
+| ExitPlanMode    | `ExitPlanMode`                  | 主智能体                             | 提交计划、请求用户同意并退出 plan mode                                                           | 否                                 | 否                                           | 100000 chars                   |
+| TodoRead        | `TodoRead`                      | 主智能体                             | session todo 状态读取                                                                            | 是                                 | 是                                           | 100000 chars                   |
+| TodoWrite       | `TodoWrite`                     | 主智能体                             | session todo 状态替换                                                                            | 是，session-only                   | 否                                           | 100000 chars                   |
 
 ## ZCode 的实现取向
 

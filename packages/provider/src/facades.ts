@@ -1,6 +1,7 @@
 /* oxlint-disable eslint(max-lines) -- Settings/Selection Facade 共享同一套 Registry 投影与写入边界。 */
 import type { ConfigValidationIssue } from "./config-overlay.js";
-import type { ProviderModelMembership } from "./config-service.js";
+import type { GenericSetupInput, ProviderModelMembership } from "./config-service.js";
+import { modelSelectionSchema } from "@zcode/shared/model-selection";
 import type {
   ModelConfig,
   ModelConfigObject,
@@ -19,7 +20,7 @@ import {
   parseModelConfig,
   parseProviderConfig,
 } from "./config/index.js";
-import type { ProviderRegistryView } from "./registry.js";
+import { validateModelSelectionOptions, type ProviderRegistryView } from "./registry.js";
 import {
   serializeRegistryModelConfig,
   serializeRegistryProviderConfig,
@@ -46,6 +47,11 @@ export interface ProviderRegistryFacadeSource {
 }
 
 export interface ProviderSettingsMutationTarget {
+  saveGenericSetup?(input: GenericSetupInput): Promise<{ readonly providerId: ProviderId }>;
+  saveConfiguredDefault?(
+    selection: ModelSelection,
+    membership: ProviderModelMembership,
+  ): Promise<unknown>;
   createPersonalProvider(input?: {
     readonly templateId?: ProviderTemplateId;
     readonly providerName?: string;
@@ -143,6 +149,19 @@ export interface SavePersonalModelDraftInput {
   readonly nextModelId: ModelId;
   readonly personalConfig: ModelConfigObject;
   readonly useRecommendedConfig?: boolean;
+  readonly basedOnRevision: number;
+}
+
+export interface SaveGenericSetupInput {
+  readonly setupId: string;
+  readonly providerName: string;
+  readonly providerConfig: ProviderConfigObject;
+  readonly modelId: ModelId;
+  readonly modelConfig: ModelConfigObject;
+}
+
+export interface SaveConfiguredDefaultInput {
+  readonly selection: ModelSelection;
   readonly basedOnRevision: number;
 }
 
@@ -299,6 +318,44 @@ export class ProviderSettingsFacade {
 
   onDidChange(listener: (view: ProviderSettingsView) => void): () => void {
     return this.#source.onDidChange(() => listener(this.getView()));
+  }
+
+  saveGenericSetup(input: SaveGenericSetupInput): Promise<ProviderSettingsCreationResult> {
+    // 同一向导的并发提交也进入同一条串行链；稳定 ID 使已提交但响应失败可安全重放。
+    const providerId = `custom-${input.setupId.toLowerCase()}`;
+    return this.#mutateProvider(providerId, "generic-setup", async (target) => {
+      if (!target.saveGenericSetup) throw new Error("Generic setup mutation unavailable");
+      await target.saveGenericSetup({
+        ...input,
+        providerConfig: parseProviderConfig(input.providerConfig),
+        modelConfig: parseModelConfig(input.modelConfig),
+      });
+    }).then((view) => ({ providerId, view }));
+  }
+
+  saveConfiguredDefault(input: SaveConfiguredDefaultInput): Promise<ProviderSettingsView> {
+    const selection = modelSelectionSchema.parse(input.selection);
+    return this.#mutateProvider(selection.providerId, "configured-default", async (target) => {
+      if (!target.saveConfiguredDefault) throw new Error("Configured default mutation unavailable");
+      const snapshot = requireSnapshot(this.#source);
+      if (snapshot.registry.revision !== input.basedOnRevision)
+        throw new Error("Configured default revision conflict");
+      const provider = snapshot.registry.providers.find(
+        (candidate) => candidate.providerId === selection.providerId,
+      );
+      const model = provider?.models.find((candidate) => candidate.modelId === selection.modelId);
+      if (
+        !provider ||
+        provider.config.visibility === "hidden" ||
+        !model ||
+        !validateModelSelectionOptions(model, selection).ok
+      )
+        throw new Error("Configured default is not selectable");
+      await target.saveConfiguredDefault(
+        selection,
+        this.#modelMembership(selection.providerId, snapshot),
+      );
+    });
   }
 
   createPersonalProvider(input?: {

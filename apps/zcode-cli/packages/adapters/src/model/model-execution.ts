@@ -30,6 +30,7 @@ import { createModelOptionMapFetch, type RawRequestBodyCapture } from "./model-o
 import { createNetworkProxyFetch } from "../network/proxy-fetch.js";
 import { createProviderEndpointRoutingFetch } from "./provider-endpoint-routing-fetch.js";
 import { normalizeModelTlsFailure } from "./failure-tls.js";
+import { createModelAuthFetch } from "./model-auth-fetch.js";
 import {
   mergeModelRequestHeaders,
   withoutModelAuthHeaders,
@@ -286,13 +287,15 @@ export class AiSdkModelExecution {
     const headers = withoutModelQuerySourceHeader(providerConfig.headers);
     const networkTransport = this.resolveProviderTransport(providerId);
     // ID 属于当前 attempt，不能放入按 Provider 缓存的 transport，避免切换账号后串用。
-    const providerTransport = this.endpointRoutingPort
-      ? createProviderEndpointRoutingFetch({
-          fetch: networkTransport,
-          routingPort: this.endpointRoutingPort,
-          apiKeyId,
-        })
-      : networkTransport;
+    // 通用源的 endpoint 由配置 owner 决定；旧账号专用路由仅保留到账号退役阶段。
+    const providerTransport =
+      this.endpointRoutingPort && providerConfig.access.type === "zhipu-account"
+        ? createProviderEndpointRoutingFetch({
+            fetch: networkTransport,
+            routingPort: this.endpointRoutingPort,
+            apiKeyId,
+          })
+        : networkTransport;
     const requestTransport = this.requestSecurity.protectTransport({
       providerId,
       providerConfig,
@@ -312,13 +315,20 @@ export class AiSdkModelExecution {
             values: optionValues,
           })
         : fetch;
+    const authMode =
+      providerConfig.access.type === "zhipu-account"
+        ? "api-key"
+        : (providerConfig.access.authMode ?? "api-key");
+    // 两个官方 SDK 对 undefined 会读 process.env；空值只用于关闭该读取，不是保存/发送的 Key。
+    const sdkApiKey = authMode === "api-key" ? apiKey : "";
+    const authenticatedFetch = createModelAuthFetch(optionFetch, authMode, providerConfig.headers);
 
     switch (providerConfig.kind) {
       case "openai": {
         const provider = createOpenAI({
-          apiKey,
+          apiKey: sdkApiKey,
           baseURL: providerConfig.baseURL,
-          fetch: createOpenAIResponsesJsonCompatFetch(optionFetch),
+          fetch: createOpenAIResponsesJsonCompatFetch(authenticatedFetch),
           headers,
         });
         return provider.responses as LanguageModelFactory;
@@ -326,9 +336,9 @@ export class AiSdkModelExecution {
 
       case "anthropic": {
         const provider = createAnthropic({
-          apiKey,
+          apiKey: sdkApiKey,
           baseURL: normalizeAnthropicBaseURL(providerConfig.baseURL),
-          fetch: createAnthropicCompatFetch(optionFetch),
+          fetch: createAnthropicCompatFetch(authenticatedFetch),
           headers: withAnthropicAuthorizationHeader(apiKey, headers),
         });
         return provider as LanguageModelFactory;
@@ -338,8 +348,8 @@ export class AiSdkModelExecution {
         const provider = createOpenAICompatible<string, string, string, string>({
           name: providerConfig.name ?? providerId,
           baseURL: providerConfig.baseURL,
-          apiKey,
-          fetch: optionFetch,
+          apiKey: sdkApiKey,
+          fetch: authenticatedFetch,
           headers,
           // OpenAI Compatible 流式 usage 需要显式请求，Usage 是执行结果的一部分。
           includeUsage: true,
@@ -385,7 +395,9 @@ function toAiSdkProviderConfig(
   config: RegistryProviderConfig,
 ): AiSdkProviderConfig {
   const common = {
-    ...(config.access.type !== "zhipu-account" && config.access.apiKey
+    ...(config.access.type !== "zhipu-account" &&
+    (config.access.authMode ?? "api-key") === "api-key" &&
+    config.access.apiKey
       ? { apiKey: config.access.apiKey }
       : {}),
     baseURL: config.api.baseUrl,
@@ -409,6 +421,19 @@ function applyModelRequestAuth(
   requestAuth: ModelRequestAuth | undefined,
 ): AiSdkProviderConfig {
   if (!requestAuth) return providerConfig;
+  if (
+    providerConfig.access.type !== "zhipu-account" &&
+    providerConfig.access.authMode &&
+    providerConfig.access.authMode !== "api-key"
+  ) {
+    return {
+      ...providerConfig,
+      headers: mergeModelRequestHeaders(
+        providerConfig.headers,
+        withoutModelAuthHeaders(requestAuth.headers),
+      ),
+    };
+  }
   const staticHeaders = withoutRequestVerificationHeaders(providerConfig.headers);
   // 账号动态身份头必须先清理静态认证头，避免 SDK 优先使用旧凭据。
   const headers =

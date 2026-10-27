@@ -12,6 +12,11 @@ import {
   decodeProviderConfigFile,
   encodeProviderConfigFile,
 } from "./provider-config-file-codec.js";
+import {
+  confirmPersonalConfigMigration,
+  hasPendingPersonalConfigMigration,
+  preparePersonalConfigMigration,
+} from "./personal-config-migration.js";
 
 export interface NodePersonalProviderConfigRepositoryOptions {
   readonly filePath: string;
@@ -115,7 +120,10 @@ export class NodePersonalProviderConfigRepository implements PersonalProviderCon
     if (file === null && !this.#importLegacy) return snapshotFromUpdate(emptyUpdate());
     if (file !== null) {
       const update = decodeProviderConfigFile(file.value);
-      if (JSON.stringify(file.value) === JSON.stringify(encodeProviderConfigFile(update))) {
+      if (
+        JSON.stringify(file.value) === JSON.stringify(encodeProviderConfigFile(update)) &&
+        !(await hasPendingPersonalConfigMigration(this.#filePath))
+      ) {
         return snapshotFromUpdate(update);
       }
     }
@@ -135,8 +143,15 @@ export class NodePersonalProviderConfigRepository implements PersonalProviderCon
     const update = decodeProviderConfigFile(file.value);
     const encoded = encodeProviderConfigFile(update);
     if (JSON.stringify(file.value) !== JSON.stringify(encoded)) {
+      if (isVersionOne(file.value))
+        await preparePersonalConfigMigration(
+          this.#filePath,
+          file.text,
+          JSON.stringify(encoded, null, 2),
+        );
       await this.#writeLocked(update);
     }
+    await confirmPersonalConfigMigration(this.#filePath, JSON.stringify(encoded, null, 2));
     return snapshotFromUpdate(update);
   }
 
@@ -232,14 +247,25 @@ export function createNodePersonalProviderConfigRepository(
   return new NodePersonalProviderConfigRepository(options);
 }
 
-async function readJsonFileIfExists(filePath: string): Promise<{ readonly value: unknown } | null> {
+async function readJsonFileIfExists(
+  filePath: string,
+): Promise<{ readonly value: unknown; readonly text: string } | null> {
   try {
     const text = await readFile(filePath, "utf8");
-    return { value: JSON.parse(text) as unknown };
+    return { value: JSON.parse(text) as unknown, text };
   } catch (error) {
     if (isFileNotFound(error)) return null;
     throw error;
   }
+}
+
+function isVersionOne(value: unknown): boolean {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    "schemaVersion" in value &&
+    value.schemaVersion === 1
+  );
 }
 
 function isFileNotFound(error: unknown): boolean {

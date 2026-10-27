@@ -170,12 +170,14 @@ describe("Personal 配置纯读取与写锁边界", () => {
     await reader.read();
     const paused = await pauseNextRead();
     await paused.entered;
-    const callsBefore = vi.mocked(readFile).mock.calls.length;
+    const configReadCount = () =>
+      vi.mocked(readFile).mock.calls.filter(([path]) => path === filePath).length;
+    const callsBefore = configReadCount();
     const read = reader.read();
     pendingReads.push(read);
     await read;
     await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(vi.mocked(readFile).mock.calls.length).toBe(callsBefore + 1);
+    expect(configReadCount()).toBe(callsBefore + 1);
     paused.release();
   });
 

@@ -4,7 +4,7 @@
 
 ## 工作规范（最重要）
 
-- CLI spec 位于 `apps/zcode-cli/docs/design/v2/`；新功能、行为变化先更新，bugfix 和纯重构按根规则判断。下文未带 `apps/zcode-cli/` 的代码与文档路径相对于本目录。
+- CLI spec 位于 `apps/zcode-cli/docs/design/v2/`；新功能、行为变化优先更新已有领域入口，bugfix 和纯重构按根规则判断。计划、调查和验证过程默认留在对话；完成后合并有效约束并删除被取代的记录，不另建日期或 completed 文档。下文未带 `apps/zcode-cli/` 的代码与文档路径相对于本目录。
 - 改动任何 tool（新增、删除、schema、权限、执行、prompt、adapter、事件、UI/V4 投影等）之前，必须先阅读并更新 `docs/design/v2/tool/00-tool-change-chain.md`，按端到端链路检查。
 - 其次是测试 case 很关键，能证明结果是否符合预期
 - 功能文档更新到最终行为，复用已有 spec；bugfix 用回归证据留痕，非显然根因和防回归约束在修复点留中文注释。

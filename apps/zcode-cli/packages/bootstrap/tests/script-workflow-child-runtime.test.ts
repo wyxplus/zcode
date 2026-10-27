@@ -338,7 +338,7 @@ describe("script workflow child runtime — actor transcript 直播通道", () =
  * 事故复盘（2026-09-02 日志包）：自定义 provider 起初被存成 openai-compatible，主 turn 与 actor 都
  * 404；用户改成 anthropic 并推送 registry 后主 turn 恢复，但两分钟后启动的 actor 仍用旧 kind——
  * 因为 child 拿 app 创建时冻结的配置自建了一份 registry。provider 重构后 Registry 视图是进程级的、
- * Model 由 factory 按创建时刻的视图造出（docs/working-memory/provider-refactor/design/registry/runtime.md），
+ * Model 由 factory 按创建时刻的视图造出（docs/model-provider/architecture.md），
  * 所以这里只剩一条要钉住：child 造 Model 走的必须是 deps 里父会话那一份 factory，且以父会话
  * **当前**的选择为基线。
  */

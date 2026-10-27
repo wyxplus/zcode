@@ -1,15 +1,11 @@
 # V4 会话架构：当前状态与文档导航
 
-更新日期：2026-07-15
+更新日期：2026-10-13
 
 V4 conversation 主链路已经落地：CLI 维护 canonical facts、command inbox 和 product projection；
 Host/relay 转发连接与 topic；renderer/web 订阅 projection、发送 command，并只保留局部 UI 状态。
 
-本目录混合了两类文档：
-
-- 当前规格：schema、恢复、fault、sessions-index 等仍约束现行代码；
-- 实施轨迹：phasing、review、deletion/parity 记录迁移依据，正文中的 legacy 路径、行数和“待实现”
-  只代表当时状态。
+本目录维护 schema、恢复、fault、sessions-index 与 timeline 等现行规格。仍待裁决或实施的事项保留明确状态；已被取代的分期、评审和删除记录通过 Git 追溯。
 
 产品语义优先读 [Conversation Product Protocol](../conversation-product-protocol.md)，系统总览优先读
 [ZCode Protocol](../zcode-protocol.md) 与 [Message Flow](../architecture/message-flow.md)。
@@ -61,33 +57,32 @@ projection。
 
 ## 当前代码入口
 
-| 层 | 入口 |
-| --- | --- |
-| V4 schema | `packages/shared/src/zcode-protocol-v4/` |
+| 层                 | 入口                                                                                                        |
+| ------------------ | ----------------------------------------------------------------------------------------------------------- |
+| V4 schema          | `packages/shared/src/zcode-protocol-v4/`                                                                    |
 | UI transport/store | `packages/ui/src/v4/agentConversationTransport.ts`、`conversationProjectionStore.ts`、`sessionDataLayer.ts` |
-| UI pane/commands | `packages/ui/src/v4/SessionPane.tsx`、`ConversationComposer.tsx` |
-| Host/service route | `packages/services/src/zcode-agent/zcodeAgentConnectionScope.ts`、`zcodeAgentService.ts` |
-| CLI gateway | `apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/v4-gateway.ts` |
-| CLI projection | `product-projection.ts`、`sessions-index-projection.ts` |
-| CLI commands | `apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/commands/` |
+| UI pane/commands   | `packages/ui/src/v4/SessionPane.tsx`、`ConversationComposer.tsx`                                            |
+| Host/service route | `packages/services/src/zcode-agent/zcodeAgentConnectionScope.ts`、`zcodeAgentService.ts`                    |
+| CLI gateway        | `apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/v4-gateway.ts`                                     |
+| CLI projection     | `product-projection.ts`、`sessions-index-projection.ts`                                                     |
+| CLI commands       | `apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/commands/`                                         |
 
 ## 文档索引
 
-| 文档 | 当前角色 |
-| --- | --- |
-| [01-topology.md](./01-topology.md) | 拓扑和职责设计；结合当前总览读取 |
-| [02-projection.md](./02-projection.md) | projection 设计与裁决依据 |
-| [03-commands.md](./03-commands.md) | command/ACK/inbox 规格与未完成项 |
-| [04-sync-and-recovery.md](./04-sync-and-recovery.md) | topic 订阅、seq、snapshot、recovery 约束 |
-| [05-transport-and-backpressure.md](./05-transport-and-backpressure.md) | transport/wire/backpressure 规格 |
-| [06-ui.md](./06-ui.md) | V4 UI 设计和实施轨迹 |
-| [07-persistence.md](./07-persistence.md) | canonical facts、投影重建和迁移 |
-| [08-phasing.md](./08-phasing.md) | 历史分期与清理轨迹，不是当前进度表 |
-| [09-protocol-schema.md](./09-protocol-schema.md) | 早期 schema 设计；字段冲突时让位于代码与 10 |
-| [10-protocol-spec.md](./10-protocol-spec.md) | V4 字段级主规格 |
-| [11-deletion-plan.md](./11-deletion-plan.md) | 历史删除执行清单 |
-| [12-fault-catalog.md](./12-fault-catalog.md) | fault/reason code 词表 |
-| [13-golden-test-mapping.md](./13-golden-test-mapping.md) | case 到 reducer/protocol/WDIO 证据映射 |
-| [14-sessions-index.md](./14-sessions-index.md) | sessions-index 当前规格和实现入口 |
-| [design-review.md](./design-review.md) | 迁移前代码审计与风险轨迹 |
-| [review-meeting-brief.md](./review-meeting-brief.md) | 评审历史输入，不是现状摘要 |
+| 文档                                                                           | 当前角色                                    |
+| ------------------------------------------------------------------------------ | ------------------------------------------- |
+| [01-topology.md](./01-topology.md)                                             | 拓扑和职责设计；结合当前总览读取            |
+| [02-projection.md](./02-projection.md)                                         | projection 设计与裁决依据                   |
+| [03-commands.md](./03-commands.md)                                             | command/ACK/inbox 规格与未完成项            |
+| [04-sync-and-recovery.md](./04-sync-and-recovery.md)                           | topic 订阅、seq、snapshot、recovery 约束    |
+| [05-transport-and-backpressure.md](./05-transport-and-backpressure.md)         | transport/wire/backpressure 规格            |
+| [06-ui.md](./06-ui.md)                                                         | V4 UI 设计和实施轨迹                        |
+| [07-persistence.md](./07-persistence.md)                                       | canonical facts、投影重建和迁移             |
+| [09-protocol-schema.md](./09-protocol-schema.md)                               | 早期 schema 设计；字段冲突时让位于代码与 10 |
+| [10-protocol-spec.md](./10-protocol-spec.md)                                   | V4 字段级主规格                             |
+| [12-fault-catalog.md](./12-fault-catalog.md)                                   | fault/reason code 词表                      |
+| [13-golden-test-mapping.md](./13-golden-test-mapping.md)                       | case 到 reducer/protocol/WDIO 证据映射      |
+| [14-sessions-index.md](./14-sessions-index.md)                                 | sessions-index 当前规格和实现入口           |
+| [timeline-authority.md](./timeline-authority.md)                               | 实体身份、顺序、历史兼容与最终裁决          |
+| [17-cold-resume-runtime-activation.md](./17-cold-resume-runtime-activation.md) | 冷恢复与 Runtime 激活边界                   |
+| [18-resume-race-audit-plan.md](./18-resume-race-audit-plan.md)                 | 明确标注的恢复竞态问题与未完成验收          |

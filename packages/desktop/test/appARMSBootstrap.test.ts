@@ -39,15 +39,12 @@ vi.mock("@zcode/shared", async (importOriginal) => {
   };
 });
 
-// beforeReport 是 armsRum.init(config) 里的一个字段；直接从 mock 的 init 调用参数里取出来调用，
-// 不需要走真实上报网络请求，即可验证 LoAF 归因摘要被正确合并进 event.properties。
+// 直接消费已关闭配置中的纯 beforeReport 投影；不会初始化 SDK 或产生网络请求。
 async function getBeforeReport(): Promise<
   (payload: { events?: Array<Record<string, unknown>> }) => unknown
 > {
-  await import("../src/main/appARMSBootstrap.js");
-  const config = init.mock.calls[0]?.[0] as unknown as {
-    beforeReport: (payload: { events?: Array<Record<string, unknown>> }) => unknown;
-  };
+  const { buildDisabledArmsConfiguration } = await import("../src/main/appARMSBootstrap.js");
+  const config = buildDisabledArmsConfiguration();
   return config.beforeReport;
 }
 
@@ -225,10 +222,24 @@ describe("appARMSBootstrap beforeReport", () => {
     init.mockClear();
   });
 
+  it("D01：即使发布端点存在也不初始化 SDK 或注入 renderer", async () => {
+    const { armsInitPromise, buildDisabledArmsConfiguration } =
+      await import("../src/main/appARMSBootstrap.js");
+    await armsInitPromise;
+    expect(init).not.toHaveBeenCalled();
+    expect(buildDisabledArmsConfiguration()).toMatchObject({
+      enable: false,
+      endpoint: "",
+      autoInject: false,
+    });
+  });
+
   it("使用 Desktop 本地开发运行态计算 ARMS 环境", async () => {
     await import("../src/main/appARMSBootstrap.js");
     const shared = await import("@zcode/shared");
-    const config = init.mock.calls[0]?.[0] as unknown as {
+    const config = (
+      await import("../src/main/appARMSBootstrap.js")
+    ).buildDisabledArmsConfiguration() as unknown as {
       env: string;
       app: { env: string };
       tracing: { sample: number };

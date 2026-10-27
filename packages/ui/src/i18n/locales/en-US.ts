@@ -1076,7 +1076,8 @@ const enUS: Record<string, string> = {
   "browser.permission.deviceBluetooth": "Bluetooth devices",
   "browser.permission.unknownCapability": "an unknown capability",
   "browser.permission.screenShareTitle": "{origin} wants to share your screen",
-  "browser.permission.screenShareDescription": "Choose the screen or window to share. This choice applies only to this session.",
+  "browser.permission.screenShareDescription":
+    "Choose the screen or window to share. This choice applies only to this session.",
   "browser.permission.deviceTitle": "{origin} wants to connect a device",
   "browser.permission.connect": "Connect",
   "browser.permission.screenGroup.screen": "Entire Screen",
@@ -3121,6 +3122,30 @@ const enUS: Record<string, string> = {
   "settings.modelProvider.readOnlyField": "{field} (read only)",
   "settings.modelProvider.endpointPath": "Endpoint path: {format}",
   "settings.modelProvider.apiFormat": "API format",
+  "modelSetup.title": "Configure your model API",
+  "modelSetup.description":
+    "Connect an API without an app account. Your sources and model choices are saved locally.",
+  "modelSetup.existing": "Choose an existing model",
+  "modelSetup.useExisting": "Use as default and continue",
+  "modelSetup.capabilitiesHint":
+    "This initial model sends no reasoning parameters and accepts text. Configure advanced capabilities in model settings.",
+  "modelSetup.save": "Save as default and continue",
+  "modelSetup.saving": "Saving…",
+  "modelSetup.error":
+    "Unable to finish setup. Check the fields and retry; an already saved source will be reused.",
+  "modelSetup.skip": "Skip for now",
+  "settings.modelProvider.authMode": "Authentication",
+  "settings.modelProvider.disableReasoningParameters": "Disable reasoning parameters",
+  "settings.modelProvider.authMode.api-key": "API key",
+  "settings.modelProvider.authMode.custom-headers": "Custom headers",
+  "settings.modelProvider.authMode.none": "No authentication",
+  "settings.modelProvider.headers": "HTTP headers",
+  "settings.modelProvider.headers.edit": "Show / edit",
+  "settings.modelProvider.headers.hide": "Hide",
+  "settings.modelProvider.headers.hint":
+    "JSON object with string values. Custom headers may contain credentials; keep them private.",
+  "settings.modelProvider.headers.invalid":
+    "Enter a JSON object with string values, or leave it empty to clear the headers.",
   "settings.modelProvider.apiFormat.chatCompletions": "Chat completions (/v1/chat/completions)",
   "settings.modelProvider.apiFormat.responses": "Responses (/responses)",
   "settings.modelProvider.apiFormat.anthropicMessages":

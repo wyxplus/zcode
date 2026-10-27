@@ -21,14 +21,14 @@ describe("Todo104 最终文件外壳", () => {
     const file = { schemaVersion: 1, config };
     const decoded = decodeProviderConfigFile(file);
     expect(decoded.defaultModelSelection).toEqual(config.defaultModelSelection);
-    expect(encodeProviderConfigFile(decoded)).toEqual(file);
+    expect(encodeProviderConfigFile(decoded)).toEqual({ ...file, schemaVersion: 2 });
     expect(
       encodeProviderConfigFile({
         providers: ProviderConfigMap.empty(),
         models: ModelConfigRules.empty(),
       }),
     ).toEqual({
-      schemaVersion: 1,
+      schemaVersion: 2,
       config: {
         providerConfigRules: { providerRules: [] },
         modelConfigRules: { providerModelRules: [], manualProviderModelRules: [] },

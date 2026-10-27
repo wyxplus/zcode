@@ -28,7 +28,7 @@ describe("Todo130 手动可编辑字段边界", () => {
     expect(
       manualModelConfigSchema.safeParse({
         ...manualConfig,
-        properties: { ...manualConfig.properties, supportsToolCall: true },
+        properties: { ...manualConfig.properties, requiresMfjsToolSchema: true },
       }).success,
     ).toBe(false);
     expect(
@@ -90,16 +90,17 @@ describe("Todo130 手动可编辑字段边界", () => {
       rules.resolve({ providerId: "p", modelId: "m", apiType: "unknown" }).validateComplete()
         .length,
     ).toBeGreaterThan(0);
-    expect(() =>
-      personal.setExact(
-        "p",
-        "m",
-        parseModelConfig({
-          ...manualConfig,
-          properties: { ...manualConfig.properties, supportsToolCall: true },
-        }),
-        false,
-      ),
-    ).toThrow();
+    const changed = personal.setExact(
+      "p",
+      "m",
+      parseModelConfig({
+        ...manualConfig,
+        properties: { ...manualConfig.properties, supportsToolCall: false },
+      }),
+      false,
+    );
+    expect(
+      changed.resolve({ providerId: "p", modelId: "m", apiType: "a" }).properties?.supportsToolCall,
+    ).toBe(false);
   });
 });

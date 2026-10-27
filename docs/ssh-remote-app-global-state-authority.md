@@ -144,8 +144,8 @@ Local → Remote；本地登出或删除不会撤销已经写入远端的凭据�
 
 ## 相关当前设计
 
-- `docs/working-memory/provider-refactor/design/environment/environment.md`
-- `docs/working-memory/provider-refactor/design/registry/runtime.md`
-- `docs/working-memory/provider-refactor/design/registry/configuration.md`
+- `docs/model-provider/environment-draft.md`
+- `docs/model-provider/architecture.md`
+- `docs/model-provider/architecture.md`
 - `docs/remote/zcode-agent-remote-deployment.md`
 - `docs/web-remote-control/web-remote-control-architecture.md`

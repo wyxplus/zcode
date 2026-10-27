@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { UserInfo } from "@zcode/shared";
 import type { ModelSelectionView } from "@zcode/services";
 import { resolveProviderAvailabilityState } from "@/lib/modelProviderAvailability.js";
 import { logger } from "@/logger.js";
@@ -12,9 +11,8 @@ export interface ProviderAvailabilityLoginEntryGuardResult {
 
 export function useProviderAvailabilityLoginEntryGuard({
   enabled = true,
-  user,
-  isRestoringOAuthSession,
-  providerFamilyDomain,
+  settingsHydrated,
+  modelSetupSkipped,
   modelSelectionView,
   modelSelectionError,
   refreshProviderState,
@@ -22,9 +20,8 @@ export function useProviderAvailabilityLoginEntryGuard({
   setLoginEntryOpen,
 }: {
   enabled?: boolean;
-  user: UserInfo | null;
-  isRestoringOAuthSession: boolean;
-  providerFamilyDomain: string | null | undefined;
+  settingsHydrated: boolean;
+  modelSetupSkipped: boolean;
   modelSelectionView: ModelSelectionView | null;
   modelSelectionError?: Error;
   refreshProviderState: () => Promise<void>;
@@ -54,17 +51,14 @@ export function useProviderAvailabilityLoginEntryGuard({
         : modelSelectionView;
       const availability = resolveProviderAvailabilityState({ modelSelectionView: refreshedView });
       const { hasUsableProvider, providerCount } = availability;
-      const shouldOpenLoginEntry = !providerFamilyDomain || (!user && !hasUsableProvider);
+      const shouldOpenLoginEntry = !hasUsableProvider && !modelSetupSkipped;
 
-      // 未登录且没有可用模型配置时必须引导用户连接账号或填写 API Key。
-      // 启动检查、API Key 设置回流等入口统一走这里，避免各处复制判断后语义分叉。
-      logger.info("[Root] provider 可用性登录入口守卫完成检查", {
+      // 首次配置只依赖模型可用性和持久化 skip；旧账号域不能作为已完成配置的事实。
+      logger.info("[Root] 模型配置入口守卫完成检查", {
         reason: options.reason,
         source: availability.source,
         providerCount,
         hasUsableProvider,
-        hasUser: Boolean(user),
-        hasProviderFamilyDomain: Boolean(providerFamilyDomain),
         shouldOpenLoginEntry,
       });
       setLoginEntryOpen(shouldOpenLoginEntry);
@@ -77,11 +71,10 @@ export function useProviderAvailabilityLoginEntryGuard({
     [
       enabled,
       modelSelectionView,
-      providerFamilyDomain,
+      modelSetupSkipped,
       refreshProviderState,
       readModelSelectionView,
       setLoginEntryOpen,
-      user,
     ],
   );
 
@@ -100,11 +93,7 @@ export function useProviderAvailabilityLoginEntryGuard({
       return;
     }
 
-    if (
-      startupCheckCompletedRef.current ||
-      isRestoringOAuthSession ||
-      !providerAvailabilityHydrated
-    ) {
+    if (startupCheckCompletedRef.current || !settingsHydrated || !providerAvailabilityHydrated) {
       return;
     }
 
@@ -116,7 +105,7 @@ export function useProviderAvailabilityLoginEntryGuard({
     });
   }, [
     enabled,
-    isRestoringOAuthSession,
+    settingsHydrated,
     modelSelectionError,
     providerAvailabilityHydrated,
     syncLoginEntryWithProviderAvailability,

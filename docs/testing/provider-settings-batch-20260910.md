@@ -58,7 +58,7 @@ Todo126 新增两个 coding plan vision badge 用例：相同双尺寸/主题下
 
 同日 Todo119/124：禁用后模型测试按钮 disabled，重新开启恢复；成功提示使用 Fixture Provider 而非内部 fixture ID，语义绿色背景/文字/边框与关闭按钮同时存在。四个浏览器用例合跑通过。名称回传、成功/失败/异常及资格提示本地化由真实 React 组件事件测试补充；签名网络错误原样透传由服务测试覆盖。
 
-关联：[Todo107](../working-memory/provider-refactor/steps/todo-107-provider-settings-feedback-enablement-and-template-links.md)、[Todo111](../working-memory/provider-refactor/steps/todo-111-zhipu-coding-plan-api-key-and-standard-api-templates.md)。
+关联：[Todo107](../model-provider/architecture.md)、[Todo111](../model-provider/architecture.md)。
 
 用例文件：`packages/ui/test/browser/manual-review/pending/provider-settings-batch.test.mjs`，配套 fixture 使用真实 TemplatePicker、ProviderCard、Navigation、反馈组件，服务写入由测试路由隔离；不写真实用户数据。
 
@@ -72,7 +72,6 @@ Todo126 新增两个 coding plan vision badge 用例：相同双尺寸/主题下
 运行：`CHROME_EXECUTABLE_PATH=<Chromium> node --test packages/ui/test/browser/manual-review/pending/provider-settings-batch.test.mjs`。Linux 需 Chromium 运行依赖及中文字库。本次使用环境已有隔离共享库和临时官方发行版 Noto CJK 字库。
 
 既有 Electron `settings-ui-polish` 已按最终 DeepSeek 两成员、菜单与帮助标题更新并在 Pro 实跑通过，`provider-settings-write-recovery` 也已在 Pro 合批通过。前者 SSH 分支仍跳过；二者不等于手机 shared-host 联合验证。原生控制台打开由 K116-N01 单独证明，不借此宣称官方登录态通过。
-
 
 2026-09-12 Todo137 已确认新增覆盖：现有 vision badge 浏览器用例增加 Z.ai／BigModel Start Plan。两个尺寸/语言/主题下，设置列表和模型菜单均隐藏 GLM-5.3 视觉标，Flash 仍显示；只验证共用展示组件，实际图片能力由单测验证不变。先红后绿，2项浏览器用例通过；保持 pending 分类。
 

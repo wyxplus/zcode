@@ -349,7 +349,7 @@ sess_54392f61：首条消息上方挂 [modelChange]），编辑期切换也只�
   fallback 的 last-selected CAS 只与这条实时回调共同发生，普通 snapshot 差异不得写。两种状态
   仍都不由 UI 写 timeline 行；marker
   时机继续遵循上一条。当前完整判定链路见
-  `docs/chat/manual-model-switch-resolution-chain.md`。
+  `docs/model-provider/selection-state.md`。
 - **重放确定性**：marker 由事件序列（ModelSelected + TurnStarted）确定性推导，
   冷恢复/fork 重放同一口径；transcript hydration 不合成 modelChange marker，
   无历史迁移问题。

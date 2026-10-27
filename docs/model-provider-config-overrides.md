@@ -1,5 +1,7 @@
 # Model Provider Config Metadata Merge
 
+当前首次/手动入口和默认写入已迁至 [generic API spec](specs/generic-api-only-workbench/README.md)。Personal 文件为 v2，默认与源/模型由同一 Repository 保存。以下账号域或旧配置格式仅为尚存 legacy/历史说明，不作为新向导写入合同；全面清理留 S5/S6。
+
 ## 背景
 
 App 侧模型供应商权威源是 `~/.zcode/v2/config.json` 的 `provider` 字段。这个文件可能来自

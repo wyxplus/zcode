@@ -9,13 +9,13 @@ sourceOfTruth:
     - docs/conversation-protocol-declaration.md
     - docs/conversation-product-protocol.md
   modelSelection:
-    - docs/chat/manual-model-switch-resolution-chain.md
+    - docs/model-provider/selection-state.md
     - docs/chat/new-task-model-resolution-chain.md
     - docs/ui/chat-model-select-menu.md
   providerRegistry:
-    - docs/working-memory/provider-refactor/design/registry/provider-and-model-configuration-overview.md
-    - docs/working-memory/provider-refactor/design/registry/model-membership-and-enablement.md
-    - docs/superpowers/specs/2026-08-21-model-provider-modality-settings-design.md
+    - docs/model-provider/architecture.md
+    - docs/model-provider/architecture.md
+    - docs/model-provider/input-output-format.md
   implementation:
     - packages/shared/src/model-selection.ts
     - packages/provider/src/config/model-config.ts
@@ -706,13 +706,7 @@ constraints:
       all:
         - dimension: surface
           in:
-            [
-              chat-draft,
-              chat-existing-session,
-              automation-editor,
-              user-subagent,
-              builtin-subagent,
-            ]
+            [chat-draft, chat-existing-session, automation-editor, user-subagent, builtin-subagent]
         - dimension: provider-source
           in: [zcode-builtin, account-builtin, personal, remote-host-mirror]
     decision: signature-class-representative

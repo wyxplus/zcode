@@ -2,10 +2,23 @@ import { describe, expect, it, vi } from "vitest";
 import { createRemoteProviderProvisioningExecutor } from "../src/host/remoteProviderProvisioningService.js";
 
 describe("Remote Provider Provisioning Host facade", () => {
+  it.each([undefined, [1, 2]])("旧远端能力 %s 在读取本地 secret 前拒绝同步", async (versions) => {
+    const source = { read: vi.fn() };
+    const target = {
+      apply: vi.fn(),
+      ...(versions ? { getCapabilities: async () => ({ supportedSchemaVersions: versions }) } : {}),
+    };
+    expect(
+      await createRemoteProviderProvisioningExecutor({ source, target }).syncLocalToRemote(),
+    ).toMatchObject({ status: "unsupported", rolledBack: false });
+    expect(source.read).not.toHaveBeenCalled();
+    expect(target.apply).not.toHaveBeenCalled();
+  });
   it("成功结果不携带远端附加的未知错误码，避免 Host schema 丢弃成功回包", async () => {
     const service = createRemoteProviderProvisioningExecutor({
       source: { read: vi.fn(async () => ({ syncId: "fixture" })) } as never,
       target: {
+        getCapabilities: async () => ({ supportedSchemaVersions: [3] }),
         apply: vi.fn(async () => ({
           syncId: "fixture",
           status: "applied",
@@ -13,12 +26,14 @@ describe("Remote Provider Provisioning Host facade", () => {
           credentialCount: 0,
           rolledBack: false,
           errorCode: "token=fixture-secret",
+          errorMessage: "key=fixture-private-key",
         })),
       } as never,
     });
     const result = await service.syncLocalToRemote();
     expect(result.status).toBe("applied");
     expect(result).not.toHaveProperty("errorCode");
+    expect(result).not.toHaveProperty("errorMessage");
   });
 
   it.each(["source", "target"])("%s 抛错保留安全的失败阶段", async (stage) => {
@@ -29,6 +44,7 @@ describe("Remote Provider Provisioning Host facade", () => {
       }),
     };
     const target = {
+      getCapabilities: async () => ({ supportedSchemaVersions: [3] }),
       apply: vi.fn(async () => {
         throw new Error("token=fixture-secret");
       }),
@@ -45,6 +61,7 @@ describe("Remote Provider Provisioning Host facade", () => {
     "目标错误码 %s 只透传 allowlist；兼容旧目标",
     async (errorCode) => {
       const target = {
+        getCapabilities: async () => ({ supportedSchemaVersions: [3] }),
         apply: vi.fn(async () => ({
           syncId: "fixture",
           status: "failed",
@@ -80,6 +97,7 @@ describe("Remote Provider Provisioning Host facade", () => {
     const envelope = { syncId: "source-sync" };
     const source = { read: vi.fn(async () => envelope) };
     const target = {
+      getCapabilities: async () => ({ supportedSchemaVersions: [3] }),
       apply: vi.fn(async (envelope: unknown) => ({
         syncId: (envelope as { syncId: string }).syncId,
         status: "applied" as const,
@@ -103,6 +121,7 @@ describe("Remote Provider Provisioning Host facade", () => {
     const envelope = { syncId: "source-sync" };
     const source = { read: vi.fn(async () => envelope) };
     const target = {
+      getCapabilities: async () => ({ supportedSchemaVersions: [3] }),
       apply: vi.fn(async () => ({
         syncId: envelope.syncId,
         status: "applied" as const,

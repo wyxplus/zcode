@@ -190,7 +190,7 @@ resolveInteraction(fullAccess) → session FIFO → registry + broker claim（Ho
 - Composer 在现有 workspaceIdentity/session 草稿内持久化已处理 grant ID；普通快照和撤回编辑不能再次触发旧授权。撤回编辑同时恢复队列项已记录的 mode、Plan、模型与 reasoning；旧项缺少的字段保留当前草稿。scope 切换不修改其他任务；新提交按自己的明确配置处理。
 - 桌面 continuous 与手机 replayable 沿用各自投递/重连契约；进程重启恢复 execution state 与 grant 标记，队列仍沿用现有冷恢复丢弃规则。
 
-实现及验收证据见 [Todo158](working-memory/provider-refactor/steps/todo-158-permission-dialog-full-access-and-queued-mode.md) 和 [覆盖矩阵](testing/conversation-session-e2e-coverage-matrix.md)。pending E2E 不自动视为人工准入或手机整链路通过。
+实现及验收证据见 [Todo158](permission-approval-queue-mode.md) 和 [覆盖矩阵](testing/conversation-session-e2e-coverage-matrix.md)。pending E2E 不自动视为人工准入或手机整链路通过。
 
 ## 命令预览完整性（2026-09-28）
 
@@ -209,6 +209,7 @@ resolveInteraction(fullAccess) → session FIFO → registry + broker claim（Ho
 `$` 起始标记与命令正文放在同一滚动视口内，滚动离开首行后一起消失，回到顶部后重新出现；不得固定在命令中段旁。
 
 键盘路径：存在长命令展开按钮时，默认第一项权限选项按 Shift+Tab 返回命令按钮，按钮按 Tab 回到第一项；展开后继续 Shift+Tab 可进入命令滚动视口。展开/滚动不得提交授权。短命令没有按钮时，既有选项循环保持不变。
+
 ## Group task scope
 
 Feishu/Lark group tasks use `SessionInfo.permission.scope = "session"` before tool execution. The first trusted group input initializes an empty session ruleset; later inputs retain only that task's explicit approvals. Session-scoped tasks do not read or write project approval memory. Existing private/Desktop tasks without this marker retain project semantics. An explicit owner mode change remains session configuration; message text and model output never set the marker or grant permissions.

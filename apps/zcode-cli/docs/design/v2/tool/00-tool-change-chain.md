@@ -98,7 +98,6 @@ interrupted 冷恢复，不保证原始输出。Desktop continuous 与手机 rep
 完整顺序见 [streaming recovery](../model/streaming-tool-execution-and-recovery.md#tool-result-settlement)。
 回归覆盖图片 Stop、真实 SQLite 锁、批次中途保存失败、媒体与 usage 失败、冷恢复和 checkpoint 取消。
 
-
 ## 目的
 
 改动 tool 不是只改一个 handler 或 schema。tool 是 NL->Code 的核心边界，任何新增、删除、重命名、字段调整、执行语义调整、权限变化、输出变化、provider-native 化、后台化或 UI 展示变化，都必须沿同一条端到端链路核对。
@@ -1252,7 +1251,7 @@ V4 普通主任务审批可声明 fullAccess：同一 resolveInteraction 先取�
 原子保存任务权限和已接纳未执行队列的权限后，再允许当前工具。Runtime、Composer、
 队列各自保留 Plan；项目 ruleset/default、其他任务、用户问答与独立 workflow 确认不变。
 完整提交、失败恢复、兼容与 PA158 回归清单见根目录
-`docs/working-memory/provider-refactor/steps/todo-158-permission-dialog-full-access-and-queued-mode.md`。
+`docs/permission-approval-queue-mode.md`。
 子代理请求通过父任务展示不意味着父 Runtime 拥有子 Runtime；未实现完整能力不得投放此选项。
 
 ### Todo158 失败收口与恢复修复（CR-01 / CR-02）

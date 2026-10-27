@@ -5,6 +5,7 @@ import type { ProviderModelDraftValues } from "@/settings/model-provider-section
 import { JsonSlotEditor } from "@/settings/model-provider-section/ProviderModelMetadataFields.js";
 import { ProviderModelReasoningLevelEditor } from "@/settings/model-provider-section/ProviderModelReasoningLevelEditor.js";
 import { ModelConfigHelp } from "@/settings/model-provider-section/ModelConfigHelp.js";
+import { Button } from "@/components/ui/button.js";
 
 export function ModelSettingsGroup({
   group,
@@ -38,6 +39,17 @@ export function ProviderModelReasoningSettings({
   return (
     <ModelSettingsGroup group="reasoning">
       <div className="space-y-1">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          data-testid="model-provider-disable-reasoning"
+          onClick={() =>
+            onDraftChange({ reasoningLevelValuesValue: ["disabled"], reasoningLevelMapValue: "{}" })
+          }
+        >
+          {intl.formatMessage({ id: "settings.modelProvider.disableReasoningParameters" })}
+        </Button>
         <div className="block text-ui-base text-foreground-subtle">
           {intl.formatMessage({ id: "settings.modelProvider.reasoningLevelsOrdered" })}
           <ModelConfigHelp field="reasoningLevelsOrdered" />

@@ -13,12 +13,12 @@ describe("ARMS Browser init", () => {
     vi.unstubAllGlobals();
   });
 
-  it("显式使用本地开发运行态初始化 production 产品环境为 local", async () => {
+  it("即使端点和桥接存在也不初始化云 SDK", async () => {
     vi.stubGlobal("__ZCODE_ENV__", "production");
     vi.stubGlobal("ArmsEventBridge", { send: vi.fn() });
     const { initArmsBrowserRumOnce } = await import("../src/shared/armsBrowserInit.js");
 
-    expect(initArmsBrowserRumOnce("development")).toBe(true);
-    expect(init).toHaveBeenCalledWith(expect.objectContaining({ env: "local" }));
+    expect(initArmsBrowserRumOnce("development")).toBe(false);
+    expect(init).not.toHaveBeenCalled();
   });
 });

@@ -58,10 +58,7 @@ describe("AI SDK Provider execution", () => {
         "x-api-key": "anthropic-key",
         "anthropic-version": "2023-06-01",
       });
-      expect(endpointRoutingPort.resolve).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.not.objectContaining({ apiKey: expect.any(String) }),
-      );
+      expect(endpointRoutingPort.resolve).not.toHaveBeenCalled();
     } finally {
       await closeServer(server);
     }

@@ -9,11 +9,12 @@ import {
   type ProviderConfigLayerUpdate,
 } from "@zcode/provider";
 
-const CURRENT_SCHEMA_VERSION = 1 as const;
+export const PERSONAL_PROVIDER_CONFIG_SCHEMA_VERSION = 2 as const;
+const CURRENT_SCHEMA_VERSION = PERSONAL_PROVIDER_CONFIG_SCHEMA_VERSION;
 
 type ProviderConfigFileMigration = (input: unknown) => unknown;
 
-const migrations: ReadonlyMap<number, ProviderConfigFileMigration> = new Map();
+const migrations: ReadonlyMap<number, ProviderConfigFileMigration> = new Map([[1, migrateV1]]);
 
 const storedProviderConfigSchema = z
   .object({
@@ -28,6 +29,51 @@ const storedProviderConfigSchema = z
       .strict(),
   })
   .strict();
+
+function migrateV1(input: unknown): unknown {
+  // 先完整验证旧数据，未知字段不能通过删除/补默认伪装成有效文件。
+  const parsed = storedProviderConfigSchema.extend({ schemaVersion: z.literal(1) }).parse(input);
+  const providers = parsePersonalProviderConfigMap(parsed.config.providerConfigRules);
+  parsePersonalModelConfigRules(normalizeLegacyManualRules(parsed.config.modelConfigRules));
+  const migrated = providers.toJSON().map((rule) => {
+    const config = rule.config;
+    const access = config.access;
+    if (!access || access.type === "zhipu-account" || access.authMode) return rule;
+    const headers = config.api?.headers ?? {};
+    const hasAuthOverride = Object.keys(headers).some((key) =>
+      ["authorization", "x-api-key"].includes(key.toLowerCase()),
+    );
+    const sdkHeaders: Record<string, string> = access.apiKey
+      ? {
+          Authorization: `Bearer ${access.apiKey}`,
+          ...(config.api?.type === "anthropic-messages" ? { "x-api-key": access.apiKey } : {}),
+        }
+      : {};
+    for (const [key, value] of Object.entries(headers)) {
+      for (const existing of Object.keys(sdkHeaders))
+        if (existing.toLowerCase() === key.toLowerCase()) delete sdkHeaders[existing];
+      sdkHeaders[key] = value;
+    }
+    return {
+      ...rule,
+      config: {
+        ...config,
+        access: {
+          ...access,
+          type: "api-key" as const,
+          authMode: hasAuthOverride ? ("custom-headers" as const) : ("api-key" as const),
+          ...(hasAuthOverride ? { apiKey: undefined } : {}),
+        },
+        ...(hasAuthOverride ? { api: { ...config.api, headers: sdkHeaders } } : {}),
+      },
+    };
+  });
+  return {
+    ...parsed,
+    schemaVersion: 2,
+    config: { ...parsed.config, providerConfigRules: { providerRules: migrated } },
+  };
+}
 
 export class UnsupportedProviderConfigVersionError extends Error {
   readonly version: number | null;

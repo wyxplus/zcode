@@ -26,7 +26,7 @@
 ## 旧凭据依赖检查与升级约束
 
 OAuth 账号恢复、可用性判断及请求鉴权均不得读取、解密或依赖旧 account-provider:\*:api-key；登录态有效且旧 Key 缺失或密文损坏时，仍按原账号身份换 Token。Standalone 无来源标记但有 OAuth 的旧记录自动使用 OAuth；只有明确 manual 才读取手工 Key，手工模式不依赖另存的 OAuth 是否可解密。无登录态的历史歧义记录仍要求重新选择登录方式。
-远程 Provisioning 仅同步 OAuth allowlist，远端通过自身的 Token owner 签发；不导出旧账号 Key 或短期 Token，也不跨环境复制 Key ID 缓存。schemaVersion=1 的旧 account-provider 条目仅接受格式校验后忽略，不读取、覆盖或删除现存旧/手工 Key。Personal Config 中显式手工 Provider 的 Key 仍沿原配置通道同步。
+2026-10-12 起远程 Provisioning 使用 v3，先探测 Target 能力，再仅同步通用 Personal 配置和默认选择；不再读取或导出 OAuth、账号 settings、账号 Key 或短期 Token。旧 v1/v2 在新 Target 写入前被拒绝，旧 Target 未声明 v3 时不读取本地 private 配置。账号 Token owner 尚存的本地运行链在 S5 退役，详见 [generic API spec](specs/generic-api-only-workbench/README.md)。
 团队 Key ID 就绪检查和请求期凭据非空校验必须保留；`apiKey` 传输字段暂保兼容，其 OAuth 值为 Token。移除无调用的 UI Key 指纹刷新函数及无效 Credential Store 注入，避免再次引入“Key 必须落盘才可用”的条件。登录 Token 失效、无权限和团队 ID 创建失败保持显式错误，不回退旧 Key。
 Desktop 附加远程工作区的用量鉴权优先复用 sourceServices 中现有 Local Host owner；旧附加入口没有 owner 时，在原本本机服务边界内使用同一换证工厂，不能保留只读旧 Key、解析回调恒为空的实现。个人/团队共用一个 Token 客户端与 ID Store，登录变更清理缓存；不改变手机 replayable 路由。
 验收：旧 Key 缺失/坏密文但 OAuth 有效可恢复；手工 Key 不受坏 OAuth 影响；本地/远端有坏旧 Key 不阻断同步且原记录不动；旧信封可接收但不应用 Key；OAuth 删除、回滚、幂等和手机/桌面既有 owner/流边界保持。

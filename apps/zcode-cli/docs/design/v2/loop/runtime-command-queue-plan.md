@@ -138,9 +138,7 @@ export interface TaskNotificationRuntimeCommand extends RuntimeCommandBase {
   readonly toolUseId?: string;
 }
 
-export type RuntimeCommand =
-  | PromptRuntimeCommand
-  | TaskNotificationRuntimeCommand;
+export type RuntimeCommand = PromptRuntimeCommand | TaskNotificationRuntimeCommand;
 ```
 
 新建 `apps/zcode-cli/packages/core/src/runtime/methods/runtime-command-queue.ts`：
@@ -192,7 +190,7 @@ export async function executeTaskNotificationCommand(
 **文件:**
 
 - Create: `apps/zcode-cli/docs/design/v2/loop/runtime-command-queue-plan.md`
-- Do not modify for this phase: `apps/zcode-cli/docs/design/v2/tool/07-subagent-background-plan.md`
+- Do not modify for this phase: `apps/zcode-cli/docs/design/v2/tool/07-subagent.md`
 
 **Checklist:**
 
@@ -206,9 +204,9 @@ export async function executeTaskNotificationCommand(
 
 ```bash
 test -f apps/zcode-cli/docs/design/v2/loop/runtime-command-queue-plan.md
-git diff -- apps/zcode-cli/docs/design/v2/tool/07-subagent-background-plan.md
+git diff -- apps/zcode-cli/docs/design/v2/tool/07-subagent.md
 rg -n "[Cc][Ll][Aa][Uu][Dd][Ee]" apps/zcode-cli/docs/design/v2/loop/runtime-command-queue-plan.md || true
-git diff --check -- apps/zcode-cli/docs/design/v2/loop/runtime-command-queue-plan.md apps/zcode-cli/docs/design/v2/tool/07-subagent-background-plan.md
+git diff --check -- apps/zcode-cli/docs/design/v2/loop/runtime-command-queue-plan.md apps/zcode-cli/docs/design/v2/tool/07-subagent.md
 ```
 
 **通过标准:**

@@ -36,7 +36,7 @@ Start 跟随当前 App 登录，无需单独连接。`current` 表示匹配账�
 
 `startPlanRecommendationDismissed` 是当前 App／Host 的统一持久化偏好。勾选“不再提示”并确认任一按钮只关闭推荐，各入口下次仍使用自己保存的模型；关闭弹窗不保存勾选。另一入口或连接同 Host 的手机在下次提交时重新读取该偏好。实际额度／鉴权错误照常提示，不增加跨 Host 的账号云同步。
 
-Bot、后台执行、任务列表“立即运行”、已有队列出队、重试、Wiki 失败页补齐、Subagent 继承／仅思考或文本修改不提示。全局账号连接失效提示只观察付费连接，Start 保留自身额度和不可用反馈。完整边界与 SIP-01～21 验收见 [Todo154](working-memory/provider-refactor/steps/todo-154-start-plan-independent-provider.md)。
+Bot、后台执行、任务列表“立即运行”、已有队列出队、重试、Wiki 失败页补齐、Subagent 继承／仅思考或文本修改不提示。全局账号连接失效提示只观察付费连接，Start 保留自身额度和不可用反馈。完整边界与 SIP-01～21 验收见 [Todo154](model-provider/architecture.md)。
 
 以下旧接口说明中的 `builtin:*` 是迁移前身份；当前对应 `account:*`，不得恢复旧 Provider Store。
 
@@ -117,7 +117,7 @@ submission → fresh snapshot + valid bucket + compatible same-model quota?
 
 `/side <text>` is also an interactive first submission. Resolve the child-inherited effective model before recommendation; never substitute an unsubmitted parent composer draft. `createSelectionSideSession.firstInput` accepts optional complete `modelSelection`, used for the child creation and first input, preserving reasoning options. Old text-only payloads keep their existing inheritance. Cancel keeps the inherited selection; closing the recommendation leaves the draft and sends no create command. Empty `/side` only opens a child and does not recommend.
 
-The existing atomic creation/first-input command, command id, admission and ACK own execution and deduplication. Parent model/queue and global paid connection remain unchanged. Desktop continuous and mobile replayable still use the same owner and original recovery paths. Accepted regressions are SF-01 through SF-19 in [Todo156](working-memory/provider-refactor/steps/todo-156-start-plan-followup-final-decisions.md).
+The existing atomic creation/first-input command, command id, admission and ACK own execution and deduplication. Parent model/queue and global paid connection remain unchanged. Desktop continuous and mobile replayable still use the same owner and original recovery paths. Accepted regressions are SF-01 through SF-19 in [Todo156](model-provider/architecture.md).
 
 The settings status panel uses the Start Plan provider identity to present a
 free-plan state with a paid Coding Plan upgrade entry. The panel projection is

@@ -3,7 +3,7 @@
 > **2026-08-22 M3 收口：** 本文记录 staging 合入前的设计背景。当前实现不再消费
 > `/client/configs.magic_name`，也不在源码中按具体模型 ID 构造 reasoning 策略；有效行为已经写入
 > ZCode Built-in Model Config Rules，并由通用 Adapter 序列化。冲突处以
-> `docs/working-memory/provider-refactor/steps/03-staging-integration.md` 为准。
+> `docs/model-provider/architecture.md` 为准。
 
 ## 背景
 

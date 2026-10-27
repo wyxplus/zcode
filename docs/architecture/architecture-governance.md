@@ -59,6 +59,10 @@ Git diff / 未跟踪文件枚举
 
 阅读包由代码和策略生成，包含目标模块的 `module.ts`、`contract.ts`、示例、契约测试、短 CONTRACT.md、直接依赖契约、owner、允许边和受影响测试，不复制完整实现。
 
+### 规范与过程材料
+
+行为契约优先更新已有领域 spec；仅独立的新领域缺少维护入口时新建。架构阅读包、影响分析、实施计划和逐轮验证输出默认属于临时工作上下文，不为每次变更新增仓库文档。跨会话未完成事项保留明确状态与验收条件，完成后将有效约束合入 spec 并删除过程记录；迁移入口时同步更新 feature graph、技能、代码注释和文档链接。具体维护规则以根 AGENTS.md 的“文档维护”为准。
+
 ## 推进顺序
 
 先建立策略、依赖图、baseline 和报告模式；再启用高置信度结构规则；随后以 Project/Session 为完整样板验证 contract、module manifest 和阅读包；最后扩展到 workspace identity、identity、model、automation、plugins/MCP 等领域。不得为单个领域复制一套门禁。

@@ -6,7 +6,7 @@
 字段、错误与生命周期合同见 [后台 Bash 输出详情](../background-bash-output-details.md)。
 
 - 状态：**当前事实（2026-07-11 target/action/edit/retry 闭环）**。本版在既有 projection schema 上把 wire 升至 v3，接通可信连接订阅、物理分片/有界 resync、CLI 权威输入与 `commands/query`、复合 row target 和 running stable assistant fork。细化 [09-protocol-schema.md](./09-protocol-schema.md)；订阅/恢复/背压语义分别以 [04](./04-sync-and-recovery.md)/[05](./05-transport-and-backpressure.md) 为准。
-- 已吸收 [design-review.md](./design-review.md) 的全部 R/G/D 结论与两项裁决（queue 不持久化、inbox 内存化）。
+- 已吸收 [design-review.md](README.md) 的全部 R/G/D 结论与两项裁决（queue 不持久化、inbox 内存化）。
 - §9.2 已采用**方案 B**：事件日志是进程内有界日志，`logEpoch` 随 CLI runtime 代际变化；跨重启通过持久 transcript/input facts hydration 生成新 snapshot，不恢复旧 epoch。
 - 文中的 ⚠ 是设计期决策标记；§10 已记录最终裁决，不能再把它解释为当前待拍板项。
 - 类型以 TypeScript 记法为讨论基准，落地时以 zod schema 实现；`?` = 可缺省，缺省语义在注释里。

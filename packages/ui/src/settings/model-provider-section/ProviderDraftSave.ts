@@ -1,4 +1,4 @@
-import { isApiKeyAccess, type ProviderApiType } from "@zcode/provider";
+import { isApiKeyAccess, type ProviderApiType, type ProviderAuthMode } from "@zcode/provider";
 import {
   getProviderFormLabel,
   type ProviderSettingsFormProvider,
@@ -9,6 +9,35 @@ export interface ProviderDraftValues {
   apiFormat: ProviderApiType;
   baseUrlValue: string;
   apiKeyValue: string;
+  authMode?: ProviderAuthMode;
+  headersValue?: string;
+}
+
+export function formatProviderHeadersDraft(
+  headers: Readonly<Record<string, string>> | null | undefined,
+): string {
+  return headers && Object.keys(headers).length ? JSON.stringify(headers, null, 2) : "";
+}
+
+export function parseProviderHeadersDraft(value: string): Record<string, string> | null {
+  if (!value.trim()) return {};
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return parsed &&
+      typeof parsed === "object" &&
+      !Array.isArray(parsed) &&
+      Object.entries(parsed).every(([, entry]) => typeof entry === "string")
+      ? (parsed as Record<string, string>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export class ProviderHeadersDraftError extends Error {
+  constructor() {
+    super("Invalid HTTP headers JSON");
+  }
 }
 
 function normalizeConfiguredBaseUrl(value: string): string {
@@ -53,19 +82,44 @@ export function resolvePendingProviderDraftSave({
   const keyChanged =
     isApiKeyAccess(provider.config.access) &&
     draft.apiKeyValue !== (provider.config.access.apiKey ?? "");
-  if (!labelChanged && !typeChanged && !urlChanged && !keyChanged) return null;
+  const modeChanged =
+    provider.config.access?.type === "api-key" &&
+    draft.authMode !== undefined &&
+    draft.authMode !== (provider.config.access.authMode ?? "api-key");
+  const headers =
+    draft.headersValue === undefined ? undefined : parseProviderHeadersDraft(draft.headersValue);
+  if (headers === null) throw new ProviderHeadersDraftError();
+  const headersChanged =
+    headers !== undefined &&
+    JSON.stringify(headers) !== JSON.stringify(provider.config.api?.headers ?? {});
+  if (
+    !labelChanged &&
+    !typeChanged &&
+    !urlChanged &&
+    !keyChanged &&
+    !modeChanged &&
+    !headersChanged
+  )
+    return null;
 
-  // 表单只拥有名称、连接类型、地址和 Key；重建整个 api 会删除隐藏 headers，
-  // 保存 Effective 对象又会把继承字段物化。分别在各自基线上只应用修改过的叶子。
+  // 表单拥有名称、连接、鉴权和 headers 草稿；保存 Effective 对象会把继承字段物化。
+  // 分别在各自的 Personal 基线上只应用修改过的叶子，未编辑的 headers 继续继承。
   const apiChanges = {
     ...(typeChanged || (urlChanged && !provider.config.api?.type) ? { type: draft.apiFormat } : {}),
     ...(urlChanged ? { baseUrl: baseURL || undefined } : {}),
+    ...(headersChanged ? { headers } : {}),
   };
   const api =
-    typeChanged || urlChanged ? { ...provider.config.api, ...apiChanges } : provider.config.api;
+    typeChanged || urlChanged || headersChanged
+      ? { ...provider.config.api, ...apiChanges }
+      : provider.config.api;
   const access =
-    keyChanged && isApiKeyAccess(provider.config.access)
-      ? { ...provider.config.access, apiKey: draft.apiKeyValue }
+    (keyChanged || modeChanged) && isApiKeyAccess(provider.config.access)
+      ? {
+          ...provider.config.access,
+          ...(modeChanged ? { authMode: draft.authMode } : {}),
+          apiKey: draft.authMode && draft.authMode !== "api-key" ? null : draft.apiKeyValue,
+        }
       : provider.config.access;
   const config = {
     ...provider.config,
@@ -75,16 +129,17 @@ export function resolvePendingProviderDraftSave({
 
   const personalConfig = {
     ...provider.personalConfig,
-    ...(keyChanged && isApiKeyAccess(provider.config.access)
+    ...((keyChanged || modeChanged) && isApiKeyAccess(provider.config.access)
       ? {
           access: {
             ...provider.personalConfig.access,
             type: provider.config.access.type,
-            apiKey: draft.apiKeyValue,
+            ...(modeChanged ? { authMode: draft.authMode } : {}),
+            apiKey: draft.authMode && draft.authMode !== "api-key" ? null : draft.apiKeyValue,
           },
         }
       : {}),
-    ...(typeChanged || urlChanged
+    ...(typeChanged || urlChanged || headersChanged
       ? { api: { ...provider.personalConfig.api, ...apiChanges } }
       : {}),
   };

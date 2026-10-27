@@ -71,7 +71,7 @@ export type ProviderProvisioningCredentialEntry = z.infer<
   typeof providerProvisioningCredentialEntrySchema
 >;
 
-export const providerProvisioningEnvelopeSchema = z
+const legacyProviderProvisioningEnvelopeSchema = z
   .object({
     // v2 的缺失账号 Key 不再代表删除；旧 Target 必须在任何写入前拒绝该信封。
     schemaVersion: z.union([z.literal(1), z.literal(2)]),
@@ -87,6 +87,19 @@ export const providerProvisioningEnvelopeSchema = z
       value.credentials.every((entry) => entry.scope === "oauth-session"),
     { message: "Provisioning v2 only accepts OAuth credentials", path: ["credentials"] },
   );
+
+export const genericProviderProvisioningEnvelopeSchema = z
+  .object({
+    schemaVersion: z.literal(3),
+    syncId: nonEmptyString,
+    personalConfig: providerProvisioningPersonalConfigSchema,
+  })
+  .strict();
+
+export const providerProvisioningEnvelopeSchema = z.union([
+  genericProviderProvisioningEnvelopeSchema,
+  legacyProviderProvisioningEnvelopeSchema,
+]);
 
 export type ProviderProvisioningEnvelope = z.infer<typeof providerProvisioningEnvelopeSchema>;
 

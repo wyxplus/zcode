@@ -15,8 +15,8 @@
   - `docs/remote-prompt-attachment-materialization.md`
   - `docs/ssh-remote-app-global-state-authority.md`
   - `docs/task/task-sqlite-index.md`
-  - `docs/working-memory/provider-refactor/design/environment/environment.md`
-  - `docs/working-memory/provider-refactor/design/registry/runtime.md`
+  - `docs/model-provider/environment-draft.md`
+  - `docs/model-provider/architecture.md`
 
 本文重新定义目标架构，不把历史 SSH/Web 实现当成目标模型。实施期间允许保留兼容适配层，但最终必须收敛到本文的进程、身份、状态权威和通信边界。
 

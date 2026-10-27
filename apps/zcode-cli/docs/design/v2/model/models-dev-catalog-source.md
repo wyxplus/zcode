@@ -20,6 +20,6 @@ or reasoning strength defaults.
 
 See the current contracts in:
 
-- `docs/working-memory/provider-refactor/design/registry/configuration.md`
-- `docs/working-memory/provider-refactor/design/registry/model-creation.md`
-- `docs/working-memory/provider-refactor/steps/todo-02-ai-sdk-execution-registry-retirement.md`
+- `docs/model-provider/architecture.md`
+- `docs/model-provider/architecture.md`
+- `docs/model-provider/architecture.md`

@@ -11,7 +11,7 @@
 
 > **v4 硬切降级标记（2026-07-05，删波次 1）**：原主目录的全部 41 个门禁 spec 已整体迁入 `pending/`。
 > 原因：v4 竖切后旧 UI（`ChatView` / `TID_CHAT_*` testid）已删除，这些 spec 的 DOM 断言全部失效；
-> 按 `docs/v4-refactor/11-deletion-plan.md` 的处置，case 的产品语义仍以
+> 按 `docs/v4-refactor/06-ui.md` 的处置，case 的产品语义仍以
 > `docs/conversation-session-case-catalog.md` 为权威，M4 期间按 catalog 逐条以
 > v4 testid（`TID_V4_*`，见 `packages/shared/src/test-ids.ts`）重写后移回主目录，coverage matrix 证据同步重建。
 

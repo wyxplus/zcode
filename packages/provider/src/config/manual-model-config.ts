@@ -15,6 +15,8 @@ export const manualModelConfigSchema = completeModelConfigDataSchema
         supportsMidConversationSystem: true,
       })
       .extend({
+        // 旧手动规则缺省时仍继承系统能力；新编辑器允许用户明确声明工具支持。
+        supportsToolCall: complete.properties.shape.supportsToolCall.optional(),
         inputFormat: complete.properties.shape.inputFormat.pick({
           supportsImage: true,
           supportsVideo: true,
@@ -34,10 +36,16 @@ export function extractManualModelConfig(input: unknown): ManualModelConfig {
 }
 
 /** 保留独立 enabled 和系统叶子；恢复智能配置及规则合成都使用同一字段归属。 */
-export function clearManualModelConfig(input: z.infer<typeof modelConfigDataSchema>) {
-  return modelConfigDataSchema.parse(
-    omitSchemaFields(manualModelConfigSchema.omit({ enabled: true }), input),
-  );
+export function clearManualModelConfig(
+  input: z.infer<typeof modelConfigDataSchema>,
+  options: { preserveToolSupport?: boolean } = {},
+) {
+  const fields = manualModelConfigSchema.omit({ enabled: true });
+  // 旧手动规则没有工具叶子，清除其他固定字段时不能抹掉它仍继承的系统能力。
+  const ownedFields = options.preserveToolSupport
+    ? fields.extend({ properties: fields.shape.properties.omit({ supportsToolCall: true }) })
+    : fields;
+  return modelConfigDataSchema.parse(omitSchemaFields(ownedFields, input));
 }
 
 function omitSchemaFields(schema: z.ZodObject, input: unknown): unknown {

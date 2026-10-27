@@ -7,6 +7,7 @@ import {
   completeProviderApiDataSchema,
   completeProviderConfigDataSchema,
   type providerApiTypeDataSchema,
+  type providerAuthModeDataSchema,
   type providerGroupDataSchema,
   type zhipuAccountModeDataSchema,
   type providerVisibilityDataSchema,
@@ -24,6 +25,7 @@ import type { ModelId, ProviderId, ProviderTemplateId } from "./ids.js";
 import type { ProviderConfigRuleData } from "./rule-data-schema.js";
 
 export type ProviderApiType = z.infer<typeof providerApiTypeDataSchema>;
+export type ProviderAuthMode = z.infer<typeof providerAuthModeDataSchema>;
 export type ProviderGroup = z.infer<typeof providerGroupDataSchema>;
 export type ZhipuAccountMode = z.infer<typeof zhipuAccountModeDataSchema>;
 
@@ -36,11 +38,13 @@ export type ApiKeyAccessConfigObject = Readonly<z.infer<typeof apiKeyAccessDataS
 export class ApiKeyAccessConfig extends ConfigOverlay<ApiKeyAccessConfig> {
   readonly type: ApiKeyAccessConfigObject["type"];
   readonly apiKey?: ApiKeyAccessConfigInput["apiKey"];
+  readonly authMode?: ProviderAuthMode;
   readonly apiKeyManagementUrl?: ApiKeyAccessConfigInput["apiKeyManagementUrl"];
 
   constructor(input: ApiKeyAccessConfigInput = {}) {
     super();
     this.type = input.type ?? "api-key";
+    this.authMode = input.authMode;
     this.apiKey = input.apiKey;
     this.apiKeyManagementUrl = input.apiKeyManagementUrl;
     Object.freeze(this);
@@ -49,7 +53,12 @@ export class ApiKeyAccessConfig extends ConfigOverlay<ApiKeyAccessConfig> {
   overlay(next: ApiKeyAccessConfig): ApiKeyAccessConfig {
     return new ApiKeyAccessConfig({
       type: next.type,
-      apiKey: this.overlayValue(this.apiKey, next.apiKey),
+      authMode: next.authMode ?? this.authMode,
+      // 鉴权模式属于配置 owner；切换为无 Key 模式时不能从模板/旧 Overlay 继承秘密。
+      apiKey:
+        next.authMode && next.authMode !== "api-key"
+          ? next.apiKey
+          : this.overlayValue(this.apiKey, next.apiKey),
       apiKeyManagementUrl: this.overlayValue(this.apiKeyManagementUrl, next.apiKeyManagementUrl),
     });
   }
@@ -63,6 +72,7 @@ export class ApiKeyAccessConfig extends ConfigOverlay<ApiKeyAccessConfig> {
       type: this.type,
       ...objectWithoutUndefined({
         apiKey: this.apiKey,
+        authMode: this.authMode,
         apiKeyManagementUrl: this.apiKeyManagementUrl,
       }),
     };

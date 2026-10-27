@@ -458,7 +458,7 @@ describe("@zcode/provider-node", () => {
     expect(importLegacy).toHaveBeenCalledOnce();
     expect(snapshot.personalProviders.keys()).toEqual(["legacy"]);
     expect(JSON.parse(await readFile(personalFilePath, "utf8"))).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
       config: {
         providerConfigRules: {
           providerRules: [{ providerId: "legacy", config: { group: "standard-personal" } }],

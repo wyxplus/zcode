@@ -3334,7 +3334,8 @@ function seedE2EStartupState(specs: string[] = []) {
         : // Bug 根因：I20 不验证账号登录，却播种假 ZCode JWT；带账号身份的旁路请求
           // 会把它发往真实控制面，401 随后弹出登录过期对话框并遮挡目标交互。
           // 该 case 只保留本地 Provider 回放，不注入无关账号身份。
-          builtInSubagentModelOverridesSpec
+          builtInSubagentModelOverridesSpec ||
+            workerSpecsContain(specs, "generic-api-auth-settings.test.ts")
           ? {}
           : subagentLoginCatalogStaleSpec
             ? {}
@@ -3379,6 +3380,7 @@ function isSubagentCodingPlanLoginCatalogStaleSpec(specs: string[] = []) {
 
 function usesProviderReadinessColdStartFixture(specs: string[] = []) {
   return (
+    workerSpecsContain(specs, "generic-api-first-run.test.ts") ||
     workerSpecsContain(specs, PROVIDER_READINESS_AGENT_STARTUP_SPEC) ||
     workerSpecsContain(specs, WINDOWS_AGENT_METRIC_PROBE_ABSENCE_SPEC)
   );

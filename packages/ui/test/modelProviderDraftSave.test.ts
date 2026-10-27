@@ -324,7 +324,7 @@ describe("Model metadata uses formal Model Config", () => {
     });
   });
 
-  it("Todo130：手动保存只冻结可编辑字段，不要求/保存隐藏映射或工具能力", () => {
+  it("手动保存冻结可编辑工具能力，不要求/保存隐藏的输出格式或 max-output 映射", () => {
     const model = createModel();
     model.config = {
       ...model.config,
@@ -338,7 +338,7 @@ describe("Model metadata uses formal Model Config", () => {
     const result = resolveProviderModelDraftCommit({ currentModel: model, draft });
     expect(result.status).toBe("commit");
     if (result.status !== "commit") return;
-    expect(result.model.personalConfig.properties).not.toHaveProperty("supportsToolCall");
+    expect(result.model.personalConfig.properties?.supportsToolCall).toBe(true);
     expect(result.model.personalConfig.properties).not.toHaveProperty("outputFormat");
     expect(result.model.personalConfig.properties?.inputFormat).toEqual({
       supportsImage: false,

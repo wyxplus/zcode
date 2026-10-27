@@ -46,7 +46,8 @@ export function serializeRegistryProviderConfig(
       config.access.type !== "zhipu-account"
         ? {
             type: config.access.type,
-            apiKey: config.access.apiKey,
+            ...(config.access.apiKey === undefined ? {} : { apiKey: config.access.apiKey }),
+            ...(config.access.authMode === undefined ? {} : { authMode: config.access.authMode }),
             ...(config.access.apiKeyManagementUrl === undefined
               ? {}
               : { apiKeyManagementUrl: config.access.apiKeyManagementUrl }),

@@ -1,5 +1,17 @@
 # Login Page
 
+分阶段变更（2026-10-12）：[无官方账号的三协议 API 工作台](../specs/generic-api-only-workbench/README.md) 将替换本页的官方登录、账号域和 API Key 登录规则。实施阶段、数据迁移及验收见该 spec 包；首次/手动配置现已实现，下文区分其与尚存 legacy 入口。
+
+## 已实现的首次与手动模型配置（2026-10-12）
+
+Root 首次入口和手动配置入口使用 `ModelSetupPage`，无需官方账号或账号域。支持三协议、三鉴权模式、任意 HTTP/HTTPS 根地址与手动 modelId。向导原子保存 source/model/完整默认选择；字段失败不写盘，提交后刷新失败重试复用同一 ID。默认只用于新草稿，已有草稿/历史/Active Model 不会被改写。
+
+“暂时跳过”通过 SettingService 保存 `modelSetupSkipped`，重启后进入工作台；无模型仍显示配置提示、保留草稿与只读历史，发送/模型预热受 readiness gate 阻断。手机远控仍复用目标 Host attachment，不运行本地向导。
+
+当前官方 OAuth 专属连接/过期入口仍使用旧 WelcomeScreen，待 S5 连同云业务退出；目前不能称已完成无官方账号发行。以下是尚未退役的 legacy 入口合同。
+
+## 尚存 legacy OAuth 入口
+
 启动阶段如果没有恢复到 OAuth 用户，且没有可用模型供应商配置，Root 会展示 `WelcomeScreen`。
 
 所有应用内登录入口都收敛到 `WelcomeScreen`，并复用 `LoginPanel` 的 OAuth 和 API Key 流程，避免手动登录、启动引导、模型供应商连接出现多套状态机：

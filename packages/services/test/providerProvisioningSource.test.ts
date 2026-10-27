@@ -30,7 +30,7 @@ function personalRepository(root: string) {
 }
 
 describe("Provider Provisioning Source", () => {
-  it("exports sparse Personal Config, default, account settings and only provider credentials", async () => {
+  it("exports Personal Config and default without account settings or credentials", async () => {
     const root = await mkdtemp(join(tmpdir(), "zcode-provider-provisioning-source-"));
     const credentialsPath = join(root, "credentials.json");
     const cipher = createCredentialCipherProvider({ env: { ZCODE_CREDENTIAL_SECRET: "source" } });
@@ -86,7 +86,7 @@ describe("Provider Provisioning Source", () => {
       "oauth:active_provider",
       "oauth:zai:access_token",
     ]);
-    expect(snapshot.schemaVersion).toBe(2);
+    expect(snapshot.schemaVersion).toBe(3);
     expect(snapshot.personalConfig).toEqual(
       encodeProviderConfigFile(await repository.read()).config,
     );
@@ -94,12 +94,8 @@ describe("Provider Provisioning Source", () => {
       providerId: "custom",
       modelId: "model-a",
     });
-    expect(snapshot.credentials).toEqual([
-      { scope: "oauth-session", key: "oauth:active_provider", value: "zai" },
-      { scope: "oauth-session", key: "oauth:zai:access_token", value: "oauth-token" },
-    ]);
-    expect(snapshot.credentials.some((entry) => entry.key === "ssh:password")).toBe(false);
-    expect(snapshot.credentials.some((entry) => entry.key.endsWith(":identity"))).toBe(false);
+    expect(snapshot).not.toHaveProperty("credentials");
+    expect(snapshot).not.toHaveProperty("accountSettings");
     expect(snapshot).not.toHaveProperty("sourceRevision");
     repository.dispose();
   });
@@ -127,11 +123,11 @@ describe("Provider Provisioning Source", () => {
     });
 
     await expect(source.read("sync-malformed-unrelated")).resolves.toMatchObject({
-      credentials: [{ scope: "oauth-session", key: "oauth:active_provider", value: "zai" }],
+      schemaVersion: 3,
     });
   });
 
-  it("still rejects malformed allowlist credential records", async () => {
+  it("does not read even malformed retired allowlist credential records", async () => {
     const root = await mkdtemp(join(tmpdir(), "zcode-provider-provisioning-source-"));
     const credentialsPath = join(root, "credentials.json");
     await writeFile(
@@ -146,8 +142,8 @@ describe("Provider Provisioning Source", () => {
       personalConfigFilePath: join(root, "provider_config.json"),
     });
 
-    await expect(source.read("sync-malformed-allowlist")).rejects.toThrow(
-      "Credential allowlist value must be a string",
-    );
+    await expect(source.read("sync-malformed-allowlist")).resolves.toMatchObject({
+      schemaVersion: 3,
+    });
   });
 });
