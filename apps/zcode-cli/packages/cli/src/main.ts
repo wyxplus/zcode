@@ -1,4 +1,9 @@
 import { interceptTuiStderr, isTuiInvocation } from "./tui-stderr.js";
+import {
+  acquireDataDirectoryUsageLease,
+  assertUnifiedDataDirectoryEnvironment,
+  initializeDataDirectory,
+} from "@zcode/shared/data-directory";
 import { interceptKnownRuntimeWarnings } from "./runtime-warnings.js";
 import { installStderrConsoleBoundary } from "./protocol-console.js";
 import { setCliProcessTitle } from "./process-name.js";
@@ -14,6 +19,13 @@ import { isProtocolServerInvocation } from "./arguments.js";
 void main();
 
 async function main(): Promise<void> {
+  try {
+    await initializeDataDirectory();
+  } catch (error) {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    process.exitCode = 1;
+    return;
+  }
   const argv = process.argv.slice(2);
   // 存储模式也可运行在 Host Worker 中，不能修改整个 Host 的进程名称。
   if (!argv.includes("--prepare-storage")) setCliProcessTitle();
@@ -48,6 +60,9 @@ async function main(): Promise<void> {
     : undefined;
 
   try {
+    await acquireDataDirectoryUsageLease({ role: "cli" });
+    assertUnifiedDataDirectoryEnvironment();
+    // beforeExit 之后仍可能安排新工作；保留进程租约，真正退出后由 PID 存活检查回收。
     if (!argv.includes("--prepare-storage"))
       Object.assign(process.env, await ensureSeaRuntimeTools());
     lifecycle?.signal.throwIfAborted();

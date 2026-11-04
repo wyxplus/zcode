@@ -100,6 +100,7 @@ export function registerPlatformIpcHandlers(options: {
   getDesktopSessionActivity: () => {
     runningAgentSessionCount: number;
   };
+  migrateDataDirectory?: (targetBaseDir: string) => Promise<void>;
   getAutoUpdatePreferences: () => Promise<{
     autoDownloadAndInstallUpdates: boolean;
   }>;
@@ -439,6 +440,19 @@ export function registerPlatformIpcHandlers(options: {
   ipcMain.handle(PlatformChannels.GetDesktopSessionActivity, () =>
     options.getDesktopSessionActivity(),
   );
+  ipcMain.handle(PlatformChannels.MigrateDataDirectory, async (event, targetBaseDir: unknown) => {
+    const senderWindow = BrowserWindow.fromWebContents(event.sender);
+    if (
+      !senderWindow ||
+      senderWindow.isDestroyed() ||
+      typeof targetBaseDir !== "string" ||
+      !targetBaseDir.trim()
+    ) {
+      throw new Error("Invalid data directory migration request");
+    }
+    if (!options.migrateDataDirectory) throw new Error("Data directory migration is unavailable");
+    await options.migrateDataDirectory(targetBaseDir);
+  });
   ipcMain.handle(PlatformChannels.GetDesktopZoomLevel, (event) => {
     const senderWindow = BrowserWindow.fromWebContents(event.sender);
     if (!senderWindow || senderWindow.isDestroyed()) {

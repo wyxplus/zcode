@@ -7,6 +7,10 @@ import { HostMessageTypes } from "@zcode/shared";
 import { buildHostProcessEnv, schedulerModulePath } from "./desktopRuntimeEnv.js";
 import { ingestSchedulerSelfResourceSample } from "./processResourceSelfHeapSource.js";
 import { registerSchedulerProcess, unregisterSchedulerProcess } from "./resourceManagerWindow.js";
+import {
+  closeProcessForDataMigration,
+  requestDataMigrationBarrier,
+} from "./desktopDataMigrationLifecycle.js";
 import type {
   MainToSchedulerMessage,
   SchedulerToMainMessage,
@@ -53,6 +57,10 @@ export interface CronSchedulerHandle {
   wake: (automationId: string) => void;
   /** app 退出前优雅收尾（通知 scheduler 释放认领 + 关库，兜底强杀）。 */
   dispose: () => Promise<void>;
+  /** 迁移不得接受强杀或超时退出，必须取得关库确认。 */
+  reserveDataDirectoryMigration: (requestId: string) => Promise<void>;
+  cancelDataDirectoryMigration: (requestId: string) => Promise<void>;
+  prepareDataDirectoryMigration: (requestId: string) => Promise<void>;
 }
 
 const DISPOSE_FORCE_KILL_MS = 1_500;
@@ -207,6 +215,36 @@ export function spawnCronScheduler(deps: CronSchedulerDeps): CronSchedulerHandle
     wake(automationId) {
       if (isDisposing) return;
       postToScheduler({ type: "scheduler-wake", automationId });
+    },
+    async reserveDataDirectoryMigration(requestId) {
+      await requestDataMigrationBarrier(child, {
+        requestId,
+        requestType: "scheduler-reserve-data-migration",
+        responseType: "scheduler-data-migration-reserved",
+      });
+    },
+    async cancelDataDirectoryMigration(requestId) {
+      await requestDataMigrationBarrier(child, {
+        requestId,
+        requestType: "scheduler-cancel-data-migration",
+        responseType: "scheduler-data-migration-cancelled",
+      });
+      isDisposing = false;
+    },
+    prepareDataDirectoryMigration(requestId) {
+      isDisposing = true;
+      const closing = closeProcessForDataMigration(child, {
+        requestId,
+        prepareType: "scheduler-prepare-data-migration",
+        responseType: "scheduler-data-migration-prepared",
+        exitType: "scheduler-exit-data-migration",
+      });
+      disposePromise = closing.catch((error: unknown) => {
+        // 迁移失败要冷启旧根，普通退出仍须能收尾；不能把拒绝的迁移 promise 当作已退出。
+        disposePromise = null;
+        throw error;
+      });
+      return disposePromise;
     },
     dispose() {
       if (disposePromise) return disposePromise;

@@ -1010,6 +1010,106 @@ setInterval(() => {}, 1000);
     }
   });
 
+  it("迁移cancel不等待迟到reserve，且旧循环不能预留下一个进程", async () => {
+    const workspacePath = mkdtempSync(join(tmpdir(), "zcode-agent-reservation-"));
+    createdDirs.push(workspacePath);
+    const manager = new ZCodeAgentProcessManager({
+      commandResolver: () => ({
+        command: process.execPath,
+        cwd: workspacePath,
+        args: ["-e", 'process.stdin.resume(); process.stdin.on("end", () => process.exit(0));'],
+      }),
+    });
+    const lateReserve = createDeferred<{ ready: true }>();
+    try {
+      const first = await manager.getClient({ workspacePath, workspaceIdentity: "first" });
+      const second = await manager.getClient({ workspacePath, workspaceIdentity: "second" });
+      const firstRequest = vi.spyOn(first, "request").mockResolvedValue({ ready: true });
+      firstRequest.mockReturnValueOnce(lateReserve.promise);
+      const secondRequest = vi.spyOn(second, "request").mockResolvedValue({ ready: true });
+      const reserving = manager.reserveForDataDirectoryMigration();
+      const rejected = expect(reserving).rejects.toThrow("CANCELLED");
+      expect(firstRequest).toHaveBeenCalledWith(
+        expect.any(String),
+        { phase: "reserve" },
+        expect.anything(),
+        { signal: expect.any(AbortSignal) },
+      );
+      await manager.cancelDataDirectoryMigration();
+      await expect(manager.getClient({ workspacePath, workspaceIdentity: "first" })).resolves.toBe(
+        first,
+      );
+      await expect(manager.reserveForDataDirectoryMigration()).rejects.toThrow("BUSY");
+      lateReserve.resolve({ ready: true });
+      await rejected;
+      expect(secondRequest).not.toHaveBeenCalled();
+      await expect(manager.prepareForDataDirectoryMigration()).rejects.toThrow("NOT_RESERVED");
+      await manager.reserveForDataDirectoryMigration();
+      expect(secondRequest).toHaveBeenCalledWith(
+        expect.any(String),
+        { phase: "reserve" },
+        expect.anything(),
+        { signal: expect.any(AbortSignal) },
+      );
+      await manager.prepareForDataDirectoryMigration();
+      expect(secondRequest).toHaveBeenCalledWith(
+        expect.any(String),
+        { phase: "close" },
+        expect.anything(),
+      );
+      expect(
+        firstRequest.mock.calls.filter(
+          ([, params]) => (params as { phase?: string }).phase === "cancel",
+        ),
+      ).toHaveLength(1);
+    } finally {
+      lateReserve.resolve({ ready: true });
+      await manager.disposeAllAndWait();
+    }
+  });
+
+  it("迁移cancel清除旧reserve watchdog，迟到ACK永不到达也不淘汰恢复的Agent", async () => {
+    const workspacePath = mkdtempSync(join(tmpdir(), "zcode-agent-reservation-watchdog-"));
+    createdDirs.push(workspacePath);
+    const manager = new ZCodeAgentProcessManager({
+      requestTimeoutMs: 30_000,
+      commandResolver: () => ({
+        command: process.execPath,
+        cwd: workspacePath,
+        args: [
+          "-e",
+          `
+          require("node:readline").createInterface({ input: process.stdin }).on("line", line => {
+            const request = JSON.parse(line);
+            if (request.method === "process/prepareDataDirectoryMigration" && request.params?.phase === "reserve") return;
+            process.stdout.write(JSON.stringify({ id: request.id, result: { ready: true } }) + "\\n");
+          });
+        `,
+        ],
+      }),
+    });
+    try {
+      const client = await manager.getClient({ workspacePath });
+      await client.request("workspace/readState", {});
+      const timedOut = vi.fn();
+      const subscription = client.onRequestTimeout(timedOut);
+      vi.useFakeTimers();
+      const reserving = manager.reserveForDataDirectoryMigration();
+      const rejected = expect(reserving).rejects.toThrow("CANCELLED");
+      await manager.cancelDataDirectoryMigration();
+      await rejected;
+      await vi.advanceTimersByTimeAsync(30_001);
+      expect(timedOut).not.toHaveBeenCalled();
+      expect(client.isDisposed).toBe(false);
+      await expect(manager.getClient({ workspacePath })).resolves.toBe(client);
+      await expect(client.request("workspace/readState", {})).resolves.toEqual({ ready: true });
+      subscription.dispose();
+    } finally {
+      vi.useRealTimers();
+      await manager.disposeAllAndWait();
+    }
+  });
+
   it("旧启动请求结清后，仍在迁移的 Agent 不进入空闲回收", async () => {
     const workspacePath = mkdtempSync(join(tmpdir(), "zcode-agent-migration-idle-"));
     createdDirs.push(workspacePath);

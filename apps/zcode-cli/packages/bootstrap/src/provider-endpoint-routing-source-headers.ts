@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { arch as readOsArch, homedir, release as readOsRelease } from "node:os";
 import { join } from "node:path";
+import { getUnifiedDataRoot } from "@zcode/shared/data-directory";
 import {
   buildZCodeSourceHeadersFromContext,
   resolveRuntimeZCodeEndpointOrigin,
@@ -46,13 +47,13 @@ function resolveClientTimezone(): string {
 }
 
 function resolveTelemetryStateFile(env: NodeJS.ProcessEnv): string {
+  const root = getUnifiedDataRoot();
+  if (root) return join(root, "v2", "telemetry-state.json");
   const dataBaseDir = env[ZCODE_DATA_BASE_DIR_ENV_KEY]?.trim() || homedir();
   return join(dataBaseDir, ".zcode", "v2", "telemetry-state.json");
 }
 
-async function readExistingDeviceMid(
-  stateFile: string,
-): Promise<string | undefined> {
+async function readExistingDeviceMid(stateFile: string): Promise<string | undefined> {
   const cached = cachedDeviceMidByStateFile.get(stateFile);
   if (cached) {
     return cached;

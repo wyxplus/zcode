@@ -100,6 +100,7 @@
     "@types/yauzl": "^2.10.3",
     "@types/yazl": "^3.3.1",
     "@vitejs/plugin-react": "^6.0.1",
+    "@wdio/cdp-bridge": "9.2.1",
     "@wdio/cli": "^9.27.0",
     "@wdio/electron-types": "^9.2.1",
     "@wdio/globals": "^9.27.0",

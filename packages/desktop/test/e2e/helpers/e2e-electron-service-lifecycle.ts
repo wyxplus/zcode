@@ -44,3 +44,18 @@ export async function initializeE2EElectronServiceBridge(
     cause: lastError,
   });
 }
+
+const closeBridgeByBrowser = new WeakMap<WebdriverIO.Browser, () => Promise<void>>();
+
+export function registerE2EElectronServiceBridgeClose(
+  browser: WebdriverIO.Browser,
+  close: () => Promise<void>,
+) {
+  closeBridgeByBrowser.set(browser, close);
+}
+
+export async function closeE2EElectronServiceBridge(browser: WebdriverIO.Browser): Promise<void> {
+  const close = closeBridgeByBrowser.get(browser);
+  if (!close) throw new Error("Electron service close callback 未注册");
+  await close();
+}

@@ -1,15 +1,15 @@
 import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { resolveDataDirectoryHome, resolveManagedDataRoot } from "@zcode/shared/data-directory";
 
 interface ChromiumHardwareAccelerationApp {
   disableHardwareAcceleration(): void;
 }
 
 export function resolveChromiumHardwareAccelerationSettingsFile(
-  homePath: string = homedir(),
+  homePath: string = resolveDataDirectoryHome(),
 ): string {
-  return join(homePath, ".zcode", "v2", "setting.json");
+  return join(resolveManagedDataRoot(homePath), "v2", "setting.json");
 }
 
 export function extractBootstrapChromiumHardwareAccelerationEnabled(rawValue: unknown): boolean {

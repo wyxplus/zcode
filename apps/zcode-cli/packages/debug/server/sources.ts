@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
+import { getUnifiedDataRoot } from "@zcode/shared/data-directory";
 import { basename, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type {
@@ -16,11 +17,11 @@ import type {
 } from "./types.js";
 
 export function defaultLogDir(): string {
-  return join(homedir(), ".zcode", "cli", "log");
+  return join(getUnifiedDataRoot() ?? join(homedir(), ".zcode"), "cli", "log");
 }
 
 export function defaultDbPath(): string {
-  return join(homedir(), ".zcode", "cli", "db", "db.sqlite");
+  return join(getUnifiedDataRoot() ?? join(homedir(), ".zcode"), "cli", "db", "db.sqlite");
 }
 
 export async function loadLogs(options: ObservationOptions): Promise<SourceLoadResult<LogRecord>> {
@@ -176,10 +177,13 @@ function toEventRecord(record: JsonRecord): EventRecord | null {
   if (!type) return null;
 
   return {
-    id: stringValue(value.id) ?? stringValue(value.eventId) ?? `${record.sourcePath}:${record.line}`,
+    id:
+      stringValue(value.id) ?? stringValue(value.eventId) ?? `${record.sourcePath}:${record.line}`,
     type,
     timestamp:
-      stringValue(value.timestamp) ?? stringValue(value.occurredAt) ?? stringValue(value.recordedAt),
+      stringValue(value.timestamp) ??
+      stringValue(value.occurredAt) ??
+      stringValue(value.recordedAt),
     traceId: stringValue(value.traceId),
     sessionId: stringValue(value.sessionId),
     turnId: stringValue(value.turnId),

@@ -453,6 +453,7 @@ function createService(options?: {
       : {}),
   }) as ReturnType<typeof createZCodeTaskServiceAdapter> & {
     disposeAll(): void;
+    disposeAllAndWait(options?: { strict?: boolean }): Promise<void>;
   };
   disposables.push(service);
   return { agent, eventEmitter, indexFrameEmitter, service, taskIndexRepo };
@@ -625,6 +626,39 @@ async function seedLegacyAcpSessionId(
 }
 
 describe("ZCode legacy task compat task index", () => {
+  it("forwards strict migration close to the Agent and task database", async () => {
+    const { service, agent, taskIndexRepo } = createService();
+    const closeAgent = vi.fn(async () => {});
+    Object.assign(agent, { disposeAllAndWait: closeAgent });
+    const closeRepo = vi.spyOn(taskIndexRepo, "close");
+
+    await service.disposeAllAndWait({ strict: true });
+
+    expect(closeAgent).toHaveBeenCalledWith({ strict: true });
+    expect(closeRepo).toHaveBeenCalledWith({ throwOnError: true });
+    expect(agent.disposeAll).not.toHaveBeenCalled();
+  });
+
+  it.each(["agent", "task database"])(
+    "does not hide a strict %s close failure during migration",
+    async (owner) => {
+      const { service, agent, taskIndexRepo } = createService();
+      const closeError = new Error(`${owner} close failed`);
+      Object.assign(agent, {
+        disposeAllAndWait: vi.fn(async (options?: { strict?: boolean }) => {
+          if (owner === "agent" && options?.strict) throw closeError;
+        }),
+      });
+      if (owner === "task database") {
+        vi.spyOn(taskIndexRepo, "close").mockImplementation((options) => {
+          if (options?.throwOnError) throw closeError;
+        });
+      }
+
+      await expect(service.disposeAllAndWait({ strict: true })).rejects.toBe(closeError);
+    },
+  );
+
   it.each([undefined, "ssh://host/repo"])(
     "waits for an in-flight topic admission before confirming cancellation (%s)",
     async (workspaceIdentity) => {

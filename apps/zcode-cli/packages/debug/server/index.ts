@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { acquireDataDirectoryUsageLease } from "@zcode/shared/data-directory";
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -110,7 +111,7 @@ export function startDebugServer(options: DebugServerOptions = {}) {
   const networkCapture =
     options.networkCapture === false
       ? undefined
-      : options.networkCapture ?? createNetworkCaptureServiceFromEnv();
+      : (options.networkCapture ?? createNetworkCaptureServiceFromEnv());
   const app = createDebugApp({ ...options, networkCapture });
   const server = serve({
     fetch: app.fetch,
@@ -177,6 +178,8 @@ function createNetworkEventStream(
 
 const currentFile = fileURLToPath(import.meta.url);
 if (process.argv[1] && resolve(process.argv[1]) === currentFile) {
+  // beforeExit 不是不可逆的退出事件，租约只在 PID 真正消失后回收。
+  await acquireDataDirectoryUsageLease({ role: "debug" });
   const staticRoot = resolve(process.cwd(), "dist");
   const networkCapture = createNetworkCaptureServiceFromEnv();
   networkCapture?.subscribe((event) => {

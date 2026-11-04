@@ -1,3 +1,4 @@
+import { getUnifiedDataRoot } from "@zcode/shared/data-directory";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
@@ -117,6 +118,7 @@ function assertSafeRuntimePath(filePath: string): void {
 }
 
 function cacheBaseDirectory(): string {
+  if (getUnifiedDataRoot()) return join(getUnifiedDataRoot()!, "cache", "sea-assets");
   const home = homedir();
   if (platform() === "darwin" && home) {
     return join(home, "Library", "Caches", "zcode", "sea-assets");

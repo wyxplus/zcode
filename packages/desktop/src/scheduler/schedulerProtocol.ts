@@ -6,6 +6,15 @@ import type { ModelSelection, NodeSelfResourceSample } from "@zcode/shared";
 /** scheduler → main */
 export type SchedulerToMainMessage =
   | {
+      type:
+        | "scheduler-data-migration-prepared"
+        | "scheduler-data-migration-reserved"
+        | "scheduler-data-migration-cancelled";
+      requestId: string;
+      ok: boolean;
+      error?: string;
+    }
+  | {
       type: "cron-dispatch-request";
       automationId: string;
       runId: string;
@@ -50,6 +59,14 @@ export type SchedulerToMainMessage =
 
 /** main → scheduler */
 export type MainToSchedulerMessage =
+  | {
+      type:
+        | "scheduler-prepare-data-migration"
+        | "scheduler-reserve-data-migration"
+        | "scheduler-cancel-data-migration";
+      requestId: string;
+    }
+  | { type: "scheduler-exit-data-migration" }
   | {
       type: "cron-dispatch-result";
       runId: string;

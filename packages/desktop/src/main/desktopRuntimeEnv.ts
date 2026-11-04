@@ -1,5 +1,6 @@
 /* eslint-disable max-lines -- desktop runtime/env 解析需要集中维护 main/host/remote assets 的启动边界，拆分会扩大远程连接回归面。 */
 import { existsSync, readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve, win32 } from "node:path";
 import type { ConnectOptions } from "@zcode/server/remote";
@@ -37,6 +38,7 @@ import {
   type ResolveRemoteCdnOptions,
 } from "./remoteCdn.js";
 import { getElectronAppPath, isElectronAppPackaged } from "./desktopElectronApp.js";
+import { getUnifiedDataRoot, resolveManagedDataRoot } from "@zcode/shared/data-directory";
 
 declare const __ZCODE_PACKAGED_AGENT_TELEMETRY_ENV__: Readonly<Record<string, string>> | undefined;
 
@@ -68,16 +70,44 @@ export const runtimeApplicationName =
 // e2e 默认工作区依赖 home 路径，因此提供显式覆盖，避免测试写到开发者真实 ~/ZCodeProject。
 export const runtimeHomePath = readRuntimeEnvOverride("ZCODE_DESKTOP_HOME_DIR");
 // Chromedriver 管理 Electron 时会注入临时 userData；e2e 默认路径模式下导入期不能提前读取 appData。
-export const shouldUseElectronDefaultUserDataPath = isTruthyRuntimeEnvOverride(
-  "ZCODE_DESKTOP_USE_ELECTRON_DEFAULT_USER_DATA",
-);
+export const shouldUseElectronDefaultUserDataPath =
+  !getUnifiedDataRoot() &&
+  isTruthyRuntimeEnvOverride("ZCODE_DESKTOP_USE_ELECTRON_DEFAULT_USER_DATA");
 export const runtimeUserDataPath =
+  (getUnifiedDataRoot()
+    ? join(
+        getUnifiedDataRoot()!,
+        "desktop",
+        isLocalDevelopmentRuntime ? "development" : isPreviewPackagedRuntime ? "preview" : "stable",
+      )
+    : undefined) ??
   readRuntimeEnvOverride("ZCODE_DESKTOP_USER_DATA_DIR") ??
   (shouldUseElectronDefaultUserDataPath
     ? undefined
     : join(getElectronAppPath("appData"), runtimeApplicationName));
+async function resolveUnifiedSessionDataPath(): Promise<string | undefined> {
+  if (!getUnifiedDataRoot() || !runtimeUserDataPath) return undefined;
+  const layoutFile = join(runtimeUserDataPath, ".profile-layout.json");
+  try {
+    const layout = JSON.parse(await readFile(layoutFile, "utf8")) as {
+      version?: unknown;
+      sessionData?: unknown;
+    };
+    if (
+      layout.version !== 1 ||
+      (layout.sessionData !== "root" && layout.sessionData !== "session")
+    ) {
+      throw new Error("Invalid Electron data directory layout");
+    }
+    if (layout.sessionData === "root") return runtimeUserDataPath;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  return join(runtimeUserDataPath, "session");
+}
 export const runtimeSessionDataPath =
-  readRuntimeEnvOverride("ZCODE_DESKTOP_SESSION_DATA_DIR") ??
+  (await resolveUnifiedSessionDataPath()) ??
+  (!getUnifiedDataRoot() ? readRuntimeEnvOverride("ZCODE_DESKTOP_SESSION_DATA_DIR") : undefined) ??
   (runtimeUserDataPath ? join(runtimeUserDataPath, "session") : undefined);
 // Chromedriver 会注入临时 --user-data-dir，并在该目录等待 DevToolsActivePort。
 // e2e 如果再用 app.setPath 覆盖 userData/sessionData，端口文件会被写到另一个目录，
@@ -312,6 +342,9 @@ function resolveHostProcessNodeEnv(): ZCodeRuntimeEnv {
 }
 
 function resolveRemoteAssetCacheDir(localEnv: LocalRuntimeEnv = {}): string {
+  if (getUnifiedDataRoot()) {
+    return join(getElectronAppPath("userData"), "remote-assets-cache");
+  }
   const overrideCacheDir = resolveEnvValue("ZCODE_REMOTE_ASSET_CACHE_DIR", localEnv);
   if (overrideCacheDir) {
     // 开发态需要复用正式版 remote cache 验证下载判断，但不能整体切换 Electron userData。
@@ -517,7 +550,9 @@ export function buildHostProcessEnv(hostProcessLocalEnv: Record<string, string>)
             )
           ? rawInheritedEnv.ZCODE_CUA_BUNDLED_HELPER_APP_PATH?.trim() ||
             join(
-              rawInheritedEnv.ZCODE_HOME?.trim() || join(homedir(), ".zcode"),
+              getUnifiedDataRoot() ||
+                rawInheritedEnv.ZCODE_HOME?.trim() ||
+                resolveManagedDataRoot(),
               "computer-use",
               "dev",
               DEV_HELPER_APP_NAME,

@@ -1,13 +1,16 @@
+import { CdpBridge } from "@wdio/cdp-bridge";
 import ElectronWorkerService, { launcher as ElectronLauncherService } from "wdio-electron-service";
 
 import {
   initializeE2EElectronServiceBridge,
   registerE2EElectronServiceBridgeReload,
+  registerE2EElectronServiceBridgeClose,
 } from "./e2e-electron-service-lifecycle.js";
 
 export const launcher: typeof ElectronLauncherService = ElectronLauncherService;
 
 export default class ReloadAwareE2EElectronService extends ElectronWorkerService {
+  private mainBridges = new Set<CdpBridge>();
   private capabilities: WebdriverIO.Capabilities | null = null;
   private specs: string[] = [];
   private instance: WebdriverIO.Browser | WebdriverIO.MultiRemoteBrowser | null = null;
@@ -24,9 +27,11 @@ export default class ReloadAwareE2EElectronService extends ElectronWorkerService
     if (!instance.isMultiremote) {
       // Bug 根因：reloadSession 不会重新执行 service.before；把当前 service 实例的
       // onReload 注册到 browser，确保 reload helper 能显式重建 CDP bridge 并完成 probe。
-      registerE2EElectronServiceBridgeReload(
-        instance as WebdriverIO.Browser,
-        () => this.onReload(),
+      registerE2EElectronServiceBridgeClose(instance as WebdriverIO.Browser, () =>
+        this.closeMainBridges(),
+      );
+      registerE2EElectronServiceBridgeReload(instance as WebdriverIO.Browser, () =>
+        this.onReload(),
       );
     }
   }
@@ -49,7 +54,18 @@ export default class ReloadAwareE2EElectronService extends ElectronWorkerService
   ) {
     await initializeE2EElectronServiceBridge({
       initialize: async () => {
-        await super.before(capabilities, specs, instance);
+        // vendor 将 Main bridge 藏在 execute 闭包中；在唯一初始化边界捕获其公开生命周期。
+        const originalConnect = CdpBridge.prototype.connect;
+        const bridges = this.mainBridges;
+        CdpBridge.prototype.connect = async function () {
+          bridges.add(this);
+          await originalConnect.call(this);
+        };
+        try {
+          await super.before(capabilities, specs, instance);
+        } finally {
+          CdpBridge.prototype.connect = originalConnect;
+        }
       },
       probe: async () => {
         if (instance.isMultiremote) {
@@ -66,8 +82,14 @@ export default class ReloadAwareE2EElectronService extends ElectronWorkerService
         }
       },
       reset: async () => {
+        await this.closeMainBridges();
         await super.after();
       },
     });
+  }
+  private async closeMainBridges(): Promise<void> {
+    const bridges = [...this.mainBridges];
+    this.mainBridges.clear();
+    await Promise.all(bridges.map((bridge) => bridge.close()));
   }
 }

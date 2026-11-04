@@ -1,10 +1,15 @@
 import { once } from "node:events";
+import { acquireDataDirectoryUsageLease } from "@zcode/shared/data-directory";
 import { fileURLToPath } from "node:url";
 import { createServer as createViteServer } from "vite";
 import { startDebugServer } from "../server/index.js";
 import { createNetworkCaptureServiceFromEnv } from "../server/network-capture.js";
 
 const apiPort = 4174;
+const dataLease = await acquireDataDirectoryUsageLease({ role: "debug" });
+process.once("beforeExit", () => {
+  void dataLease.release();
+});
 const root = fileURLToPath(new URL("..", import.meta.url));
 const networkCapture = createNetworkCaptureServiceFromEnv();
 

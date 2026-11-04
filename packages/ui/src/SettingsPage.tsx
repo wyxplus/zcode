@@ -1073,14 +1073,15 @@ export function SettingsPage({
         featureId: "settings.storage",
         action: "change_data_directory",
         trigger: "button",
-        operation: () => services.settingService.updateDataBaseDir(dir || undefined),
-        completed: { resultSource: "setting_service", requiresRestart: true },
+        operation: async () => {
+          if (!platform.migrateDataDirectory) throw new Error("Data migration is unavailable");
+          await platform.migrateDataDirectory(dir);
+        },
+        completed: { resultSource: "platform_result", requiresRestart: true },
         failureStage: "data_directory_update",
       });
-      // Bugfix: 迁移失败时不能先把本地状态改成失败路径，否则设置页会误显示为已切换。
-      setDataBaseDir(dir);
     },
-    [services.settingService],
+    [platform],
   );
   const handleTaskAutoArchiveEnabledChange = useCallback(
     async (enabled: boolean) => {

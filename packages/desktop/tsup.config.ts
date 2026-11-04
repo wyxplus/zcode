@@ -245,7 +245,7 @@ export default defineConfig([
   {
     name: "main",
     entry: {
-      "main/index": "src/main/index.ts",
+      "main/index": "src/main/startup.ts",
       "main/browserWebmRecorder": "src/main/browserView/electronBrowserWebmRecorder.ts",
       "main/zcodeDataSizeWorker": "src/main/zcodeDataSizeWorker.ts",
       // 资源管理器「存储」tab 的扫描 Worker：main 持有 StorageService，遍历放独立线程，供 new Worker(new URL()) 解析。
@@ -338,7 +338,7 @@ export default defineConfig([
   {
     name: "host",
     entry: {
-      "host/index": "src/host/index.ts",
+      "host/index": "src/host/startup.ts",
       "host/tasksStorageWorker": "src/host/tasksStorageWorker.ts",
     },
     outDir: "out",
@@ -369,7 +369,7 @@ export default defineConfig([
   },
   {
     name: "scheduler",
-    entry: { "scheduler/index": "src/scheduler/index.ts" },
+    entry: { "scheduler/index": "src/scheduler/startup.ts" },
     outDir: "out",
     format: "esm",
     platform: "node",

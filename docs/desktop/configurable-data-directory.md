@@ -1,59 +1,104 @@
 # 可配置数据存储目录
 
-## 概述
+## 产品规则与范围
 
-应用数据默认存储在 `~/.zcode/v2/`（`~` 即 `os.homedir()`）。用户可在「设置 → 通用 → 数据存储路径」中更改 `~` 对应的根目录，`.zcode/v2` 后缀不可更改。
+统一数据根是本机 ZCode 持久化数据的唯一活动位置。设置页选择的是 base directory，实际根为 `<base>/.zcode`。普通迁移严格为「当前完整根 → 已存在的空文件夹」；隐藏文件也算非空，不合并、不覆盖任意目标内容。首次升级从当前实际生效的历史 App、CLI 和 Electron 来源归拢，不能只复制设置中那一处，也不能按 mtime 选择版本。
 
-## 目录结构
+状态：统一迁移已实现，macOS 隔离数据的完整 Desktop 冷迁移与原会话续聊已通过；Windows 实机跨盘及手机联合冷恢复仍待验收，详见 CDD catalog / coverage matrix。旧的 `dataBaseDir` 仅复制 `v2` 行为已停用；迁移未提交前仍使用旧路径。
 
+受管内容包括 App 配置/凭据/索引/日志、Agent session DB、插件注册表及内容、工具产物、轨迹与缓存、用户 skills/commands/agents、非项目 conversation workspace，以及 Electron profile / 下载缓存。项目目录与其 `.zcode`、第三方共享 `.agents`、系统 HOME/USERPROFILE、远端 SSH/WSL/Docker/server 的业务根不改变。Electron Stable/Preview/Dev profile 在统一根下仍分别隔离。
+
+```text
+<base>/.zcode/
+  v2/                      App settings、credentials、tasks-index、logs
+  cli/                     session DB、plugins、artifacts、cache、rollout
+  workspace/               非项目对话用户文件
+  skills/ commands/ agents/ security/ ...
+  desktop/<profile>/       Electron userData/sessionData 与下载缓存
+<home>/.zcode-data-directory/
+  active.json              小型定位文件，不随数据搬迁
+  maintenance / leases     跨进程门禁
+  transaction.json         可恢复迁移记录，不存消息正文或凭据
 ```
-<dataBaseDir>/.zcode/v2/          ← 可配置的数据目录
-  ├── logs/
-  ├── perf/
-  ├── sessions/
-  ├── tasks-index.sqlite
-  ├── telemetry-state.json
-  └── ...
 
-<dataBaseDir>/.zcode/workspace/default/  ← 非项目对话共享的真实工作目录
+## 单一所有者、解析与接口
 
-~/.zcode/v2/setting.json          ← Bootstrap 指针（永远在默认 homedir 下）
+- shared Node-only `@zcode/shared/data-directory` 负责定位文件校验、活动根解析和跨进程使用租约。初始化使用异步 IO；同步消费者只读取已初始化的内存解析结果。没有定位文件时保留原路径语义；已有定位文件但目标缺失、无权限、标记不匹配或损坏时必须阻止启动，不静默回 HOME 创建新库。
+- 真实用户 HOME/USERPROFILE 不修改，凭据密钥身份不变化。CLI 默认 storage.dir 与 sessionDbPath 一起派生；显式 CLI 覆盖必须被预检识别，冲突不能静默丢弃。
+- `services/data-directory` 是迁移事务与 journal 的唯一 owner；通过明确的来源/生命周期 ports 工作，不导入 Desktop Runtime。Main 只提供 native 目录选择、全窗口/Host/scheduler 调度和冷重启，不接管 task/session/queue 状态。
+- 设置页使用平台迁移能力提交本机全局维护请求，草稿与进度只是投影；旧 `settingService.updateDataBaseDir` 不得继续直接复制并切换指针绕过门禁。Web/手机不提供本机搬迁入口。
+- 默认 CLI、SDK/Agent、Host、scheduler 与 Desktop 使用同一个根和维护门禁。普通进程持使用租约；全部应用 owner reserve 成功后才封闭新进程租约，避免忙碌检查前干扰已接受任务启动子进程。待现存使用者安全关闭后才复制。尚活跃的独立 CLI、另一应用身份或无法证明安全关闭的进程阻止迁移。旧版本不支持维护协议时不能假定它已停写。
+- 本机 ZCode Server 系统服务注册包含旧绝对路径时阻止迁移，需先卸载该服务再搬迁；不能只搬文件后让系统服务继续指向旧根。远端主机的数据根不参与本机迁移。
+
+## 来源盘点与目标校验
+
+1. 读取当前实际 App root、CLI storage.dir、sessionDbPath、Electron profile；明确每个 namespace 的来源。已有统一根时只迁这个根。
+2. 历史默认 HOME/v2 可能只是旧副本：App 当前数据优先于旧副本；bootstrap setting.json 的真实来源单独处理。CLI 数据按 CLI 当前配置读取。无法确定归属的同名不同内容冲突中止，双方保持原样。
+3. 目标必须是已有空目录，包含隐藏条目也拒绝；执行前重新校验。仅相同 migrationId 的受管 staging 可用于恢复。禁止源/目标相同、互相嵌套、大小写/链接别名重合和 Windows 安装目录；目标空间必须容纳完整副本与校验开销。
+4. 迁移清单包括来源、目标、文件类型、大小、内容摘要与所需的 schema 转换。未知文件保留；不能静默跳过 symlink/junction 或不支持的文件类型。链接要保留可达语义或失败退出。
+
+## 事件顺序与停写
+
+```mermaid
+sequenceDiagram
+    participant UI as Settings
+    participant M as Migration coordinator
+    participant Main as Main lifecycle
+    participant W as Hosts / Agent / scheduler
+    participant B as Cold-start maintenance
+    UI->>M: prepare empty target
+    M->>M: validate sources + record preparation owner
+    M->>Main: reserve all owners
+    Main->>W: reserve scheduler, then seal Hosts and check idle
+    alt any owner busy
+        Main->>W: cancel reservation and resume admission
+        Main->>M: cancel migration without restarting
+    else all owners reserved
+        Main->>M: block new process leases
+        Main->>W: strict close
+        W-->>Main: clean-close result
+        Main->>Main: flush browser state and exit fully
+        B->>B: acquire exclusive use; copy + verify
+        B->>B: commit active locator last
+        B->>Main: initialize new root then start normal runtime
+    end
 ```
 
-## Bootstrap 机制
+先封闭新 admission 再检查 idle，防止手机提交/定时任务的检查后竞态。reserve 只封闭入口并检查，不能关库或停止已 accepted 工作。任何 owner 忙碌时向全部 owner 发送 cancel、恢复入口并取消事务，不自动重启。只有全部 owner reserve 成功才进入不可逆的 strict-close；之后关闭失败才允许取消迁移并冷启旧根。已 accepted 输入不清空、不自动 drain；有 running、queued、等待交互、在途插件安装或其他不安全写入时不迁移。普通退出的 timeout/forced-exit 不等于 clean-close；任何未确认关闭阻止执行。复制 Electron profile 必须在旧 Electron 完整退出后、下次正常业务导入前的维护阶段执行；该维护阶段不初始化旧 profile，也不是新的 Local Host。
 
-`setting.json` 始终且只存在于默认 `homedir()/.zcode/v2/setting.json`，不跟随自定义目录迁移。它是整个路径切换的引导入口：
+先 reserve scheduler，确认已认领任务的派发与结算均结束后再封闭 Hosts；BUSY 取消先恢复 Hosts，再恢复 scheduler，避免已接受的定时任务被入口门禁丢弃。取消撤销本轮 reservation，迟到的异步结果不能重新封闭入口或确认已取消的准备；旧 reserve 未结束前不能启动下一轮。迁移日志写入失败也必须尝试解封，不能把取消日志成功作为恢复入口的前提。
 
-1. 主进程启动 → 从 `homedir()/.zcode/v2/setting.json` 读取 `dataBaseDir`
-2. 如果有值 → 调用 `setDataBaseDir(dir)` 切换后续所有数据路径
-3. 启动 host process 时通过环境变量 `ZCODE_DATA_BASE_DIR` 传递给子进程
+Bot 入站、附件准备、回推及 Host 终态保存也属于停写屏障；启用的 Bot 连接需先停用，已有在途消息必须完成。维护关闭时关库及 Provider 关闭错误向上传递，不沿用普通退出的 best-effort 吞错语义。
 
-路径解析优先级（`getDataBaseDir()`）：
-1. `setDataBaseDir()` 设置的值（主进程 bootstrap）
-2. `process.env.ZCODE_DATA_BASE_DIR`（host process 通过环境变量接收）
-3. `os.homedir()`（兜底默认值）
+显式 Desktop HOME/profile override 的隔离实例只迁移该实例指定的 Electron profile；普通产品配置归拢 Stable/Preview/Dev。不能从隔离测试或自定义实例扫描真实用户的其他 profile。
 
-## 复制行为
+desktop-continuous 冷恢复保持现行语义；手机 web-remote-replayable 通过原 attachment + snapshot/gap 恢复。迁移门禁不复制或接管 CommandInbox，不重置 owner/lease/stale run 防护。当前远端 registry 释放可能停止远端 runtime，尚无跨主机可撤销 reservation，因此存在连接中的远端 workspace 时拒绝迁移；用户须先主动断开，不能根据 UI 空闲投影直接关闭远端会话。
 
-当用户更改数据目录时，会将旧目录的数据复制到新目录：
+## 复制、转换与提交
 
-| 规则 | 说明 |
-|------|------|
-| **setting.json 及其瞬时文件不复制** | `setting.json` 是 bootstrap 指针，`setting.json.lock` 与 `setting.json.*.tmp` 是原子写入中间态，均只存在于默认 homedir 下；复制它们会导致迁移竞态或新旧目录冲突 |
-| **已有文件不覆盖** | `force: false` — 如果目标目录已存在同名文件，保留目标版本。防止还原回旧目录时，新产生的数据被旧副本覆盖 |
-| **新文件正常复制** | 源目录有、目标没有的文件会被复制过去 |
-| **conversation workspace 暂未迁移** | 当前 `copyDataDirectory()` 只复制 `.zcode/v2`；`.zcode/workspace` 的非覆盖复制属于目标语义，待 CDD02/后续实现后再纳入数据目录迁移 |
+- 源数据保留，目标 staging 完整构建。普通文件内容 hash 校验，文件变化/读失败不能作为成功。SQLite 在停写后生成一致备份并校验 integrity、关键表/ID；WAL 属于已提交状态，不能只复制主文件或直接丢 WAL。
+- 插件 installPath、子代理 outputFile、受管 workspace 的执行路径和引用按明确 schema 转换；不全局替换对话正文/任意字符串。普通项目和远端 identity 不改；非项目工作区变更需保持原 session/task 关联，不能仅重算 hash 导致旧任务不可见。
+- 目标验证包括配置可解析、凭据可解密、session 可读取、插件入口/历史 artifact 可达。除明确瞬时锁/套接字外，不能因为目录名含 cache 就丢弃内容。
+- 最后持久化切换唯一 active locator（原子替换与落盘），随后从新根冷启动。迁移过程中持久化 migrationId、阶段、来源与清单，重试幂等，不能把半成品当活动根。
+- 普通运行只写当前根；旧副本不自动删除、不参与活动数据扫描。清理旧副本是单独的显式动作，不能在迁移事务内提前删除。
 
-### 场景示例
+## 失败与恢复
 
-**正向迁移**（`/Users/a` → `/Users/a/test`）：
-- `/Users/a/.zcode/v2/` 下的所有文件（除 setting.json）复制到 `/Users/a/test/.zcode/v2/`
-- 目标目录如果不存在会自动创建
+| 状态               | 规则                                                           |
+| ------------------ | -------------------------------------------------------------- |
+| 预检/复制/校验失败 | 不提交指针；源保持可用；受管 staging 可按同一 migrationId 重试 |
+| 中断/断电          | 下次正常启动前读取 journal，恢复维护或明确报错，不启动半成品   |
+| 提交后新根启动失败 | 保留新根与旧副本；不静默回旧根；恢复必须显式进行               |
+| 新根已有新业务写入 | 绝不能直接拨回旧副本；返回原盘必须完整反向迁移到空目标         |
+| D 盘缺失/不可写    | 明确阻止进入业务状态，不在 C 盘创建空库                        |
 
-**还原**（`/Users/a/test` → `/Users/a`）：
-- `/Users/a/test/.zcode/v2/` 下的文件复制到 `/Users/a/.zcode/v2/`
-- 但 `/Users/a/.zcode/v2/` 里这段时间新产生的文件不会被覆盖
-- `setting.json` 始终不受影响
+维护启动执行失败时提供原生恢复入口：重试、取消本次迁移并启动原目录、退出。只有指针尚未提交时才能取消；保留失败目标用于诊断，不自动删除。指针已经提交时禁止恢复旧副本；修复新根后重试。尚未获得停写确认的 prepared 事务，只有发起进程已退出时才能在冷启动中取消；第二个实例不能撤销仍活跃的准备事务。
+
+## UI 与验收
+
+设置入口文案为“迁移并重启”，明确要求空文件夹、需结束正在运行的任务、保留旧副本。提交错误必须区分非空目标、来源冲突、占用、磁盘/权限和校验失败；不先把 UI 当前路径改成失败目标。迁移需要全应用冷重启，不能保存后继续向旧根开展业务。
+
+CDD01–CDD12 的 accepted 状态、setup/action/assertions 见 [case catalog](../conversation-session-case-catalog.md#cdd-configurable-data-directory--可配置数据存储路径)，实际执行结果见 [coverage matrix](../testing/conversation-session-e2e-coverage-matrix.md)。CDD01 已替换“CLI 留在 HOME”的旧断言，验证完整搬迁、原 session 续聊及旧数据库停止写入；旧版通过记录不用于证明新契约。
 
 ## Windows 安装目录保护
 
@@ -61,13 +106,13 @@ Windows 上禁止把数据根目录设置到 ZCode 的安装目录或其子目�
 
 拦截规则：
 
-| 来源 | 示例 |
-|------|------|
-| 当前桌面应用安装目录 | `process.resourcesPath` 的上级目录，例如 `C:\Users\{UserName}\AppData\Local\Programs\ZCode` |
-| Program Files 安装目录 | `%ProgramFiles%\ZCode`、`%ProgramFiles(x86)%\ZCode`、`%ProgramW6432%\ZCode` |
-| 用户 LocalAppData 安装目录 | `%LOCALAPPDATA%\Programs\ZCode` |
+| 来源                       | 示例                                                                                        |
+| -------------------------- | ------------------------------------------------------------------------------------------- |
+| 当前桌面应用安装目录       | `process.resourcesPath` 的上级目录，例如 `C:\Users\{UserName}\AppData\Local\Programs\ZCode` |
+| Program Files 安装目录     | `%ProgramFiles%\ZCode`、`%ProgramFiles(x86)%\ZCode`、`%ProgramW6432%\ZCode`                 |
+| 用户 LocalAppData 安装目录 | `%LOCALAPPDATA%\Programs\ZCode`                                                             |
 
-`packages/desktop/src/main/desktopRuntimeEnv.ts` 会在 Windows 打包态把当前安装目录通过 `ZCODE_WINDOWS_APP_INSTALL_DIR` 传给 host process。`packages/services/src/paths.ts` 在服务层按 Windows 路径规则做大小写不敏感的“等于或位于其下”判断，`packages/services/src/setting/settingService.ts` 在复制数据前执行该校验。UI 只展示错误提示，不作为唯一安全边界。
+Desktop 迁移协调器传入当前安装目录，`packages/services/src/paths.ts` 按 Windows 路径规则做大小写不敏感的“等于或位于其下”判断。Main 在关闭进程前校验选择路径，迁移引擎对 `realpath` 后的路径再次校验，防止父目录 junction 绕过；实际复制前仍复核目标身份。UI 只展示错误提示，不作为唯一安全边界。
 
 ### 安装器阻断保护
 
@@ -82,67 +127,3 @@ Windows 安装包不会禁止用户选择任意安装目录。为覆盖历史版
 7. 静默安装命中 `.zcode` 时直接退出失败，避免自动化安装绕过数据保护
 
 该阻断保护只面向安装包流程，不替代设置页的数据迁移校验。
-
-## UI 交互流程
-
-1. 只读路径框默认显示当前生效路径（已配置的路径或 homedir）
-2. 点击「选择文件夹」，通过系统目录弹窗选择新的根目录
-3. 确认无误后点击「保存」
-4. 按钮显示加载动画，选择按钮禁用，提示"正在复制数据，请勿关闭应用…"
-5. 复制完成 → 提示"数据已保存，重启应用后生效。"
-6. 复制失败 → 提示"数据复制失败，路径未更改。"（红色），可重新选择后重试
-7. Windows 上若选择了 ZCode 安装目录或其子目录 → 提示"不能选择 ZCode 安装目录作为数据存储路径"，路径不写入配置
-8. 用户重启应用后新路径生效
-
-## 已确认的迁移边界
-
-用户于 2026-08-10 确认以下目标语义：
-
-1. App `.zcode/v2` 与非项目对话 `.zcode/workspace` 一并迁移。
-2. 只允许在当前 conversation 已空闲时发起迁移。
-3. 保存成功后进入待重启状态；目标产品态应阻止继续向旧 App 数据目录写入。
-4. 目标目录已有 ZCode 数据时拒绝迁移，不做逐文件或 SQLite 合并。
-5. 完整冷重启后，迁移前任务历史仍可见，并且可以在同一任务中继续对话。
-6. `dataBaseDir` 只改变 App 数据目录；CLI 用户资源仍使用 `<HOME>/.zcode/cli`，项目内
-   `.zcode/*` 也保持原路径。
-
-首个自动化 case `CDD01` 暂不修改上述产品行为，只验证当前可安全执行的代表路径：Desktop
-本地 `desktop-continuous`、任务已空闲、目标目录为空、保存后不再执行任何业务操作并立即完整
-重启 Electron、Host 与 Agent。
-
-```text
-old App root + idle task
-          |
-          | choose empty target + save
-          v
-restart-required UI
-          |
-          | no more writes in the old process
-          | immediate full cold restart
-          v
-new App root
-          +--> old task history is visible
-          +--> same task accepts a follow-up
-          +--> App task-index writes stay under the new root
-          +--> CLI stays under <HOME>/.zcode/cli
-```
-
-`CDD01` 的 idle 与立即重启是测试前置/时序约束，不代表当前产品已经机械阻止 busy 迁移或保存后的
-继续写入；非空目标拒绝也不由该 case 证明。当前 `copyDataDirectory()` 只复制 `.zcode/v2`，尚未
-实现本 spec 要求的 `.zcode/workspace` 迁移，因此 workspace 断言单独记录为 bug candidate，不能
-把 `CDD01` 的通过解释为完整满足第 1 条。
-
-## 相关代码
-
-| 文件 | 职责 |
-|------|------|
-| `packages/services/src/paths.ts` | `setDataBaseDir` / `getDataBaseDir` / `getAppConfigDir` / `copyDataDirectory` / Windows 安装目录校验 |
-| `packages/services/src/setting/settingService.ts` | `updateDataBaseDir()` — 校验 + 复制 + 持久化 |
-| `packages/services/src/setting/setting.ts` | `ISettingService` 接口定义 |
-| `packages/shared/src/protocol.ts` | `AppSettings.dataBaseDir` 类型 |
-| `packages/shared/src/validation.ts` | zod schema |
-| `packages/desktop/build/installer.nsh` | Windows 安装器在写入文件前阻断安装目录内已有 `.zcode` 的安装 |
-| `packages/desktop/src/main/index.ts` | 主进程 bootstrap 读取 |
-| `packages/desktop/src/main/desktopRuntimeEnv.ts` | `buildHostProcessEnv` 传递环境变量 |
-| `packages/ui/src/settingsPageHelpers.tsx` | UI 输入框 + 保存状态管理 |
-| `packages/ui/src/SettingsPage.tsx` | 页面级状态 + 服务调用 |

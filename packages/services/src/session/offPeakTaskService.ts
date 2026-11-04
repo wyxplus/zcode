@@ -127,6 +127,8 @@ export class OffPeakTaskService implements IOffPeakTaskService {
   private syncTimer: ReturnType<typeof setTimeout> | null = null;
   private syncRunning = false;
   private syncStopped = true;
+  private migrationPreparing = false;
+  private resumeSyncAfterMigrationCancel = false;
   private consecutiveSyncFailures = 0;
 
   constructor(private readonly deps: OffPeakTaskServiceDeps) {}
@@ -494,6 +496,7 @@ export class OffPeakTaskService implements IOffPeakTaskService {
   // ---- offPeakTaskSync：批量轮询 + 晋级写回 + 核销 outbox ----
 
   startSync(): void {
+    if (this.migrationPreparing) return;
     if (!this.syncStopped) return;
     this.syncStopped = false;
     // 启动即扫一次未核销终态（host 启动扫描）。
@@ -506,6 +509,22 @@ export class OffPeakTaskService implements IOffPeakTaskService {
       clearTimeout(this.syncTimer);
       this.syncTimer = null;
     }
+  }
+
+  /** 轮询可能正在等待远端应答；仅停 timer 不代表最后一次状态写回已经完成。 */
+  reserveForDataDirectoryMigration(): void {
+    if (!this.migrationPreparing) this.resumeSyncAfterMigrationCancel = !this.syncStopped;
+    this.migrationPreparing = true;
+    this.stopSync();
+    if (this.syncRunning)
+      throw new Error("DATA_DIRECTORY_BUSY: Off-peak synchronization is in flight");
+  }
+
+  cancelDataDirectoryMigration(): void {
+    if (!this.migrationPreparing) return;
+    this.migrationPreparing = false;
+    if (this.resumeSyncAfterMigrationCancel) this.startSync();
+    this.resumeSyncAfterMigrationCancel = false;
   }
 
   /** disposeServiceResources 钩子：host 退出统一回收（停轮询 + 附加清理）。 */
@@ -531,7 +550,7 @@ export class OffPeakTaskService implements IOffPeakTaskService {
 
   /** 单次同步周期；显式调用（测试/启动扫描）不受 stopSync 影响，仅自动重排循环受控。 */
   async runSyncCycle(): Promise<void> {
-    if (this.syncRunning) return;
+    if (this.syncRunning || this.migrationPreparing) return;
     this.syncRunning = true;
     let nextDelay = OFF_PEAK_SYNC_MAX_INTERVAL_MS;
     try {

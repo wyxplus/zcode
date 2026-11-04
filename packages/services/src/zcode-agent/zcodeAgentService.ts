@@ -1168,7 +1168,12 @@ export function resolveOffPeakToolSelection(
 }
 export function createZCodeAgentService(
   options?: CreateZCodeAgentServiceOptions,
-): IZCodeAgentService & { disposeAllAndWait(): Promise<void> } {
+): IZCodeAgentService & {
+  disposeAllAndWait(disposeOptions?: { strict?: boolean }): Promise<void>;
+  reserveForDataDirectoryMigration(): Promise<void>;
+  cancelDataDirectoryMigration(): Promise<void>;
+  prepareForDataDirectoryMigration(): Promise<void>;
+} {
   const processManager = new ZCodeAgentProcessManager(options);
   // Windows indicator 与 macOS producer lifecycle client 共用已校验、去重的 sideband facts。
   const cuaOperationTurnTracker =
@@ -6516,14 +6521,51 @@ export function createZCodeAgentService(
       disposeLocalState();
     },
 
-    async disposeAllAndWait(): Promise<void> {
+    async reserveForDataDirectoryMigration(): Promise<void> {
+      // 等全部 lane 返回再裁决，避免 Promise.all 早退后出现迟到的 reservation。
+      const results = await Promise.allSettled([
+        processManager.reserveForDataDirectoryMigration(),
+        pluginProcessManager.reserveForDataDirectoryMigration(),
+        mcpStatusProcessManager.reserveForDataDirectoryMigration(),
+      ]);
+      const failed = results.filter((result) => result.status === "rejected");
+      if (failed.length)
+        throw new AggregateError(
+          failed.map((result) => result.reason),
+          "DATA_DIRECTORY_BUSY: Agent reservation failed",
+        );
+    },
+
+    async cancelDataDirectoryMigration(): Promise<void> {
+      const results = await Promise.allSettled([
+        processManager.cancelDataDirectoryMigration(),
+        pluginProcessManager.cancelDataDirectoryMigration(),
+        mcpStatusProcessManager.cancelDataDirectoryMigration(),
+      ]);
+      const failed = results.filter((result) => result.status === "rejected");
+      if (failed.length)
+        throw new AggregateError(
+          failed.map((result) => result.reason),
+          "DATA_DIRECTORY_CANCEL_FAILED",
+        );
+    },
+
+    async prepareForDataDirectoryMigration(): Promise<void> {
+      await Promise.all([
+        processManager.prepareForDataDirectoryMigration(),
+        pluginProcessManager.prepareForDataDirectoryMigration(),
+        mcpStatusProcessManager.prepareForDataDirectoryMigration(),
+      ]);
+    },
+
+    async disposeAllAndWait(disposeOptions?: { strict?: boolean }): Promise<void> {
       await Promise.all([
         processManager.disposeAllAndWait(),
         pluginProcessManager.disposeAllAndWait(),
         mcpStatusProcessManager.disposeAllAndWait(),
       ]);
-      automationRepo.close();
-      automationTaskIndexRepo.close();
+      automationRepo.close({ throwOnError: disposeOptions?.strict });
+      automationTaskIndexRepo.close({ throwOnError: disposeOptions?.strict });
       disposeLocalState();
     },
   };

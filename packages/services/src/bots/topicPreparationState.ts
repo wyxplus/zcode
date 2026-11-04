@@ -17,6 +17,9 @@ export function createTopicPreparationState() {
     >
   >();
   return {
+    hasPending(): boolean {
+      return topics.size > 0 || waitingStop.size > 0;
+    },
     add(key: string, message: BotInboundMessage) {
       const id = message.actor.providerMessageId;
       if (!id) throw new Error("Topic message identity is missing");

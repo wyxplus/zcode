@@ -15,6 +15,13 @@ import {
   validateWorkflowArgs,
 } from "../src/tool/handlers/saved-workflows/index.js";
 import type { SavedWorkflowMeta } from "@zcode/contracts";
+import {
+  beginDataDirectoryMaintenance,
+  commitDataDirectoryLocator,
+  endDataDirectoryMaintenance,
+  initializeDataDirectory,
+  writeDataDirectoryRootMarker,
+} from "@zcode/shared/data-directory";
 
 const created: string[] = [];
 
@@ -48,9 +55,12 @@ function writeRaw(cwd: string, fileName: string, source: string): string {
 // 定义——把 HOME 指到一个空的临时目录，让「两根 first-wins」的既有断言只看到项目档。
 let originalHome: string | undefined;
 let originalUserProfile: string | undefined;
+let originalDesktopHome: string | undefined;
 beforeEach(() => {
   originalHome = process.env.HOME;
   originalUserProfile = process.env.USERPROFILE;
+  originalDesktopHome = process.env.ZCODE_DESKTOP_HOME_DIR;
+  delete process.env.ZCODE_DESKTOP_HOME_DIR;
   const home = makeHome();
   process.env.HOME = home;
   process.env.USERPROFILE = home;
@@ -61,7 +71,27 @@ afterEach(() => {
   else process.env.HOME = originalHome;
   if (originalUserProfile === undefined) delete process.env.USERPROFILE;
   else process.env.USERPROFILE = originalUserProfile;
+  if (originalDesktopHome === undefined) delete process.env.ZCODE_DESKTOP_HOME_DIR;
+  else process.env.ZCODE_DESKTOP_HOME_DIR = originalDesktopHome;
   while (created.length > 0) rmSync(created.pop()!, { force: true, recursive: true });
+});
+
+it("uses the committed unified root for global workflows while keeping project precedence", async () => {
+  const cwd = makeCwd();
+  const root = makeCwd();
+  const maintenance = { homeDir: process.env.HOME!, migrationId: "workflow-root-test" };
+  await beginDataDirectoryMaintenance(maintenance);
+  await writeDataDirectoryRootMarker(root, "workflow-generation");
+  await commitDataDirectoryLocator(
+    { version: 1, root, generation: "workflow-generation", committedAt: 1 },
+    { ...maintenance, expectedGeneration: null },
+  );
+  await endDataDirectoryMaintenance(maintenance);
+  await initializeDataDirectory(maintenance);
+  expect(savedWorkflowRoots(cwd)).toEqual([
+    { scope: "project", dir: join(cwd, ".zcode", "workflows") },
+    { scope: "global", dir: join(root, "workflows") },
+  ]);
 });
 
 const SCRIPT = [

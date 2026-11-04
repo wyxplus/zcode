@@ -1,3 +1,4 @@
+import { resolveManagedDataRoot } from "@zcode/shared/data-directory";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
@@ -34,7 +35,7 @@ export async function resolveZCodeStorageRoot(options?: SubagentStorageOptions):
   const storageDir =
     typeof storage.dir === "string" && storage.dir.trim().length > 0
       ? storage.dir.trim()
-      : "~/.zcode";
+      : resolveManagedDataRoot(resolveUserHomeDir(options));
   return resolveConfigPath(storageDir, options);
 }
 
@@ -50,7 +51,7 @@ async function readUserCliConfig(
 ): Promise<Record<string, unknown>> {
   try {
     const raw = await readFile(
-      join(resolveUserHomeDir(options), ".zcode", "cli", "config.json"),
+      join(resolveManagedDataRoot(resolveUserHomeDir(options)), "cli", "config.json"),
       "utf8",
     );
     const parsed = JSON.parse(raw) as unknown;

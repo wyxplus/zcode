@@ -33,6 +33,42 @@ function makeEvent(overrides: Record<string, unknown> = {}) {
 }
 
 describe("taskRealtimeBridge", () => {
+  it("tracks accepted owner commands until their real result and rejects new commands during migration", () => {
+    const parentPort = new FakeParentPort();
+    let accepting = true;
+    const bridge = createTaskRealtimeBridge({
+      hostId: "host-a",
+      parentPort,
+      acceptOwnerCommand: () => accepting,
+    });
+    const listener = vi.fn();
+    bridge.onDidReceiveOwnerCommand(listener);
+    const command = {
+      commandRequestId: "request-1",
+      type: "stop_generation",
+      requesterHostId: "host-b",
+      workspacePath: "/repo",
+      workspaceKey: "/repo",
+      taskId: "task-1",
+      runId: "run-1",
+    };
+    parentPort.emitMessage({ type: HostMessageTypes.TaskOwnerCommandDeliver, command });
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(bridge.hasPendingIncomingOwnerCommands()).toBe(true);
+    accepting = false;
+    parentPort.emitMessage({
+      type: HostMessageTypes.TaskOwnerCommandDeliver,
+      command: { ...command, commandRequestId: "request-2" },
+    });
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(parentPort.postedMessages.at(-1)).toMatchObject({
+      type: "task-owner-command-result",
+      result: { commandRequestId: "request-2", success: false },
+    });
+    expect(bridge.hasPendingIncomingOwnerCommands()).toBe(true);
+    bridge.publishOwnerCommandResult({ commandRequestId: "request-1", success: true });
+    expect(bridge.hasPendingIncomingOwnerCommands()).toBe(false);
+  });
   it("publishes host response envelopes", () => {
     const parentPort = new FakeParentPort();
     const bridge = createTaskRealtimeBridge({

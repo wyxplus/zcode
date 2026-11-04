@@ -128,7 +128,7 @@ CLI 还导出 `loadSharedZCodeCredentialSync`：同步读取中发生任何错�
 ### 整个文件的删除与数据目录迁移
 
 - **Clear All Data 是全文件删除入口。** Desktop 用户确认清除全部数据后，`clearAllDataAndRelaunch` 对传入的 `credentialsDir` 执行递归删除；该目录来自当前 `getAppConfigDir()`，默认是 `~/.zcode/v2`，也可跟随自定义数据目录。操作会一起移除该目录中的 App OAuth、MCP、Bot、远端连接、relay 等凭据与配置，而非仅清 OAuth 字段；随后清浏览器存储并重启。命令还调用购买 WebView 分区清理。这与普通 App logout 的定向删除不同，也不是删除远端 Server 的数据。[清除实现](../../packages/desktop/src/main/desktopCommandHandlers.ts#L162)、[目录来源](../../packages/desktop/src/main/desktopRuntimeEnv.ts#L81)、[命令分发](../../packages/desktop/src/main/desktopCommandHandlers.ts#L763)。
-- **数据目录变更会复制凭据文件。** Setting service 调用 `copyDataDirectory` 将旧 `.zcode/v2` 复制到新位置。过滤器排除 `setting.json` 及其临时兄弟文件、符号链接，没有专门排除 credentials.json，也没有对其中的值解密再加密；该 helper 是 copy，不删除原目录。因此新路径解析成功不代表旧文件副本已经销毁，跨用户/系统复制还可能因密钥材料不同而无法解密。[调用方](../../packages/services/src/setting/settingService.ts#L452)、[复制实现](../../packages/services/src/paths.ts#L587)。
+- **数据目录迁移保留凭据密文和旧副本。** 统一迁移按[数据目录契约](../desktop/configurable-data-directory.md)执行停写、复制、校验和定位提交；不修改 HOME/USERPROFILE 或用户身份。旧副本不在迁移事务内删除，跨用户/系统复制不属于本能力。
 
 ### 日志与归档边界
 

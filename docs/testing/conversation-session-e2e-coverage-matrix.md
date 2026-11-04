@@ -1,5 +1,24 @@
 # Conversation Session E2E Coverage Matrix
 
+## 统一数据目录迁移
+
+权威入口：[数据目录 spec](../desktop/configurable-data-directory.md)。CDD01–CDD12 已接受；旧 CDD01 仅验证 App/v2 搬迁且 CLI 不动，不能计为统一迁移通过。以下区分已执行的集成/单测和仍待补的真实平台证据，不把局部通过标为整条 covered。
+
+| 范围     | 已执行证据                                                                                                                                                         | 尚未验证                                                                   |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| CDD01/04 | macOS 真实冷重启通过：空目标、App/CLI/插件 canary/Electron profile、原 session 续聊、旧数据库静止、项目文件保持                                                    | Windows 跨盘 Desktop                                                       |
+| CDD02/06 | `dataDirectoryMigration.test.ts`、`dataDirectorySchemaMigration.test.ts`：WAL、一致备份、凭据解密、原始产物/未知 SQLite、workspace 与 checkpoint 引用、ID/排序保持 | 默认 conversation workspace 的完整 GUI 恢复；真实插件运行                  |
+| CDD03    | services/Agent/Bot/OffPeak 与 Desktop coordinator/Host/scheduler 测试：busy 可逆、已接受任务派发、迟到 reserve 隔离、取消清理 watchdog、严格关闭失败传播           | 多窗口及手机并发提交 GUI                                                   |
+| CDD05    | `dataDirectoryDiscovery.test.ts` 与 Desktop profile 测试：HOME bootstrap/自定义 App/CLI 来源、历史 workspace 归拢、同名冲突拒绝、隔离实例 profile 范围             | Stable/Preview/Dev 同时安装的实机归拢                                      |
+| CDD07/08 | 文件与 SQLite 集成：复制中断重做、提交后 journal 补齐、保留新写入、再次整根迁移；原生恢复和取消失败的协调器测试                                                    | OS 强制终止/断电、磁盘满/系统权限故障的 Desktop 回放                       |
+| CDD09/11 | shared locator/lease 与路径测试：坏 locator/缺失根阻止启动、活跃使用者阻止复制、maintenance 阻止新 lease、generation 提交校验                                      | Windows 实机移除 D 盘；独立应用多进程联合 GUI                              |
+| CDD10    | POSIX 目录别名与内部 symlink、长 project ID 和截断冲突的集成测试                                                                                                   | Windows junction、长路径、大小写与跨卷边界                                 |
+| CDD12    | 保留远端 identity 的迁移断言、远端连接 BUSY 门禁及现有 replay contract 单测                                                                                        | desktop-continuous / web-remote-replayable 联合冷恢复；SSH/WSL/Docker 实机 |
+
+CDD01 最新完整构建回放 `desktop-e2e-20261104040408497-p87765-3ea0519c63a484ca`：1/1 passed，macOS arm64、Electron 41.0.3；业务关库后测试框架释放 Main Inspector，ChromeDriver 回收旧进程，完整 PID 屏障通过后才启动维护复制，禁止超时强杀后继续。本次不是 Windows 或 Docker 准入证据。
+
+专项文件/生命周期/重启 helper 回归 13 文件 200 tests、Desktop/UI 回归 14 文件 108 tests、Agent manager/maintenance 完整回归 58 tests 均通过；取消 watchdog 的追加定向回归 11 tests 通过。SQLite 真实备份生成空 WAL 的回归已纳入，非空 WAL 仍严格校验。实际测试使用隔离临时数据，未迁移开发者现有数据。以上数量按各次执行口径记录，存在交集，不相加为唯一用例总数。
+
 2026-10-12 实施：[无官方账号的三协议 API 工作台验收矩阵](../specs/generic-api-only-workbench/migration-and-acceptance.md#6-覆盖矩阵与现有证据)。S1 通用配置/adapter 已有局部证据；`generic-api-auth-settings.test.ts` 在 manual-review/pending 下 1/1 通过，验证桌面设置保存/修复，不计为完整会话 wire、手机或 CI verified。其余 `API-ONLY` 断言/阶段保持 planned；旧 login/readiness/provider 测试仍只证明原合同，不改变既有 CI 准入。
 
 SHR22 范围补充：`subagentRuntimeConfig.test.ts` 验证用户／项目扫描不进入子目录及重载隔离；`subagentRuntimeConfigWatcher.test.ts` 验证真实热更新和目录重建范围；`subagentsService.test.ts` 与 Bootstrap `subagents.test.ts` 验证 Settings／独立 CLI 第一层加载，保留插件递归发现。复用 cross-host pending 的 SHR22，断言两个 Host 的初始化及后续父轮 provider 请求不包含预置深层用户定义。

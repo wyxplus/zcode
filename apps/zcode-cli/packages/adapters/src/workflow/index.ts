@@ -1,3 +1,4 @@
+import { getUnifiedDataRoot } from "@zcode/shared/data-directory";
 import { randomUUID } from "node:crypto";
 import { appendFile, mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -32,14 +33,16 @@ interface WorkflowIndexFile {
   runs: WorkflowRunListItem[];
 }
 
-const DEFAULT_WORKFLOW_ROOT = join(homedir(), ".zcode", "cli", "workflows");
+function defaultWorkflowRoot(): string {
+  return join(getUnifiedDataRoot() ?? join(homedir(), ".zcode"), "cli", "workflows");
+}
 const WORKFLOW_DEFINITION_FILE_EXTENSION = ".json";
 
 export class NodeWorkflowStore implements WorkflowStorePort {
   private readonly rootDir: string;
 
   constructor(options: NodeWorkflowStoreOptions = {}) {
-    this.rootDir = options.rootDir ?? DEFAULT_WORKFLOW_ROOT;
+    this.rootDir = options.rootDir ?? defaultWorkflowRoot();
   }
 
   async appendEvent(event: WorkflowEvent, options?: { signal?: AbortSignal }): Promise<void> {
@@ -185,7 +188,7 @@ export class NodeWorkflowDefinitionStore implements WorkflowDefinitionStorePort 
 
   constructor(options: NodeWorkflowDefinitionStoreOptions = {}) {
     this.definitionsDir =
-      options.definitionsDir ?? join(options.rootDir ?? DEFAULT_WORKFLOW_ROOT, "definitions");
+      options.definitionsDir ?? join(options.rootDir ?? defaultWorkflowRoot(), "definitions");
   }
 
   async listDefinitions(options?: { signal?: AbortSignal }): Promise<WorkflowDefinition[]> {
@@ -239,11 +242,11 @@ export function createNodeWorkflowDefinitionStore(
 }
 
 export function getDefaultWorkflowRoot(): string {
-  return DEFAULT_WORKFLOW_ROOT;
+  return defaultWorkflowRoot();
 }
 
 export function getDefaultWorkflowDefinitionsRoot(): string {
-  return join(DEFAULT_WORKFLOW_ROOT, "definitions");
+  return join(defaultWorkflowRoot(), "definitions");
 }
 
 async function appendJsonLine(path: string, value: unknown, signal?: AbortSignal): Promise<void> {

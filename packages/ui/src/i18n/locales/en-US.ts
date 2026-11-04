@@ -2629,15 +2629,33 @@ const enUS: Record<string, string> = {
   "settings.taskAutoArchiveDays.option.30": "Archive after 30 days",
   "settings.dataBaseDir": "Data storage path",
   "settings.dataBaseDirDescription":
-    "Root directory for app data (defaults to user home directory). Existing data will be copied to the new location. The .zcode/v2 suffix cannot be changed.",
+    "Choose an empty folder to move sessions, plugins, settings, and caches together. ZCode restarts and verifies the data, keeping the original as a backup. Project files stay in place.",
   "settings.dataBaseDirPlaceholder": "Default: user home directory",
   "settings.dataBaseDirBrowse": "Choose folder",
   "settings.dataBaseDirSave": "Save",
-  "settings.dataBaseDirCopying": "Copying data, please do not close the app...",
-  "settings.dataBaseDirCopyFailed": "Data copy failed. Path was not changed.",
+  "settings.dataBaseDirMigrate": "Move and restart",
+  "settings.dataBaseDirCopying": "Closing sessions safely, then restarting to move your data…",
+  "settings.dataBaseDirCopyFailed":
+    "Could not start migration. Your data and current path are unchanged.",
+  "settings.dataBaseDirNotEmpty":
+    "Choose an empty folder. The destination must not contain any files.",
+  "settings.dataBaseDirErrorDetails": "Error details",
+  "settings.dataBaseDirBusy":
+    "Tasks or other ZCode processes are using the data. Close them and try again.",
+  "settings.dataBaseDirSourceConflict":
+    "Existing data sources conflict or their configuration cannot be read. Your original data is retained.",
+  "settings.dataBaseDirIntegrityFailed":
+    "Data verification failed. Your original data is retained and the directory was not changed.",
+  "settings.dataBaseDirNoSpace":
+    "The destination disk is full. Choose an empty folder with enough space.",
+  "settings.dataBaseDirPermissionDenied":
+    "Cannot access this directory. Check the folder permissions.",
+  "settings.dataBaseDirInvalidTarget":
+    "Choose an accessible empty folder outside the current data directory.",
   "settings.dataBaseDirForbiddenInstallDir":
     "The data directory cannot be the ZCode installation folder on Windows. Choose a folder outside the app install location.",
-  "settings.dataBaseDirRestartRequired": "Data saved. Please restart the app to take effect.",
+  "settings.dataBaseDirRestartRequired":
+    "Restarting. ZCode will reopen when migration is complete.",
   "settings.locale.system": "System default",
   "settings.locale.zh-CN": "中文简体",
   "settings.locale.en-US": "English",

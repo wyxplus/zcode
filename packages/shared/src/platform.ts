@@ -1122,6 +1122,9 @@ export interface IPlatformService {
     runningAgentSessionCount: number;
   }>;
 
+  /** 将本机全部受管数据迁移到空文件夹并冷重启；Web/远端不提供此入口。 */
+  migrateDataDirectory?(targetBaseDir: string): Promise<void>;
+
   /** 开发环境 stdio tap proxy 开关状态；非桌面平台可不实现 */
   getZCodeStdioTapDevState?(): Promise<ZCodeStdioTapDevState>;
 

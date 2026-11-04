@@ -110,6 +110,7 @@ interface SessionResourceCloseInput {
   closeSessionStore?: () => void;
   logger: Logger;
   timeoutMs?: number;
+  strict?: boolean;
 }
 
 interface CreateSessionFacadeDeps {
@@ -283,7 +284,8 @@ export function createSessionFacade(deps: CreateSessionFacadeDeps): SessionFacad
   };
 
   return {
-    close: async () => {
+    close: async (options) => {
+      const strict = options?.strict === true;
       closePromise ??= (async () => {
         // 关闭入口先阻止新调度并取消在飞 Memory Extraction，再等待取消链路收口。
         deps.runtime.beginShutdown();
@@ -293,10 +295,12 @@ export function createSessionFacade(deps: CreateSessionFacadeDeps): SessionFacad
         // （background-notifications.ts 在 shuttingDown 时不入队），不会把正在关闭的会话的模型
         // 叫醒；在 closeSessionResources **之前**，子代理还有 execution / MCP / session store
         // 可以干净地中止，引擎也还有 journal 可以写自己那一笔 stopped(interrupted)。
+        let workflowCloseError: unknown;
         if (deps.closeDynamicWorkflowRuns !== undefined) {
           try {
             await deps.closeDynamicWorkflowRuns();
           } catch (error: unknown) {
+            workflowCloseError = error;
             // 卡住或抛错的 dwf 关闭绝不能吃掉资源关闭（同下面并行关闭那条注释的论证）：
             // 记一条 warn 继续走，最坏情况是那个 run 留成孤儿行，下一次构造时被收敛。
             deps.logger.warn?.(
@@ -324,7 +328,9 @@ export function createSessionFacade(deps: CreateSessionFacadeDeps): SessionFacad
           closeNodeReplBrowserBroker: deps.closeNodeReplBrowserBroker,
           closeSessionStore: closableSessionStore ? () => closableSessionStore.close() : undefined,
           logger: deps.logger,
+          strict,
         });
+        if (strict && workflowCloseError) throw workflowCloseError;
       })();
       return await closePromise;
     },
@@ -751,10 +757,12 @@ export function createSessionFacade(deps: CreateSessionFacadeDeps): SessionFacad
 }
 
 export async function closeSessionResources(input: SessionResourceCloseInput): Promise<void> {
+  const failures: unknown[] = [];
   try {
     // 第一拍先关闭 runtime admission；后续 execution cancel 只能收口状态，不能再唤醒模型。
     input.beginShutdown();
   } catch (error) {
+    failures.push(error);
     input.logger.warn("Failed to begin runtime shutdown", {
       error: error instanceof Error ? error.message : String(error),
       event: "session.shutdown_admission.failed",
@@ -774,21 +782,27 @@ export async function closeSessionResources(input: SessionResourceCloseInput): P
 
   // 旧关闭链串行 await；Browser close 永不 settle 时，Execution/MCP 永远不会执行。
   // 各 owner 并行、独立带 deadline，任何一个失败都不能跳过其它资源。
-  await Promise.all(
+  const outcomes = await Promise.allSettled(
     resources.flatMap(([name, close]) =>
-      close ? [closeSessionResourceWithinDeadline(name, close, timeoutMs, input.logger)] : [],
+      close
+        ? [closeSessionResourceWithinDeadline(name, close, timeoutMs, input.logger, input.strict)]
+        : [],
     ),
   );
+  for (const outcome of outcomes) if (outcome.status === "rejected") failures.push(outcome.reason);
 
   try {
     input.closeSessionStore?.();
   } catch (error) {
+    failures.push(error);
     input.logger.warn("Failed to close session store", {
       error: error instanceof Error ? error.message : String(error),
       event: "session.resource_close.failed",
       resource: "session_store",
     });
   }
+  if (input.strict && failures.length)
+    throw new AggregateError(failures, "Data migration resource close failed");
 }
 
 async function closeSessionResourceWithinDeadline(
@@ -796,6 +810,7 @@ async function closeSessionResourceWithinDeadline(
   close: () => Promise<void> | void,
   timeoutMs: number,
   logger: Logger,
+  strict = false,
 ): Promise<void> {
   let timer: NodeJS.Timeout | undefined;
   const closePromise = Promise.resolve().then(close);
@@ -811,6 +826,11 @@ async function closeSessionResourceWithinDeadline(
   if (timer) clearTimeout(timer);
 
   if (outcome.type === "completed") return;
+  // 普通退出可best-effort，迁移必须让失败或超时传播，不能继续切根。
+  if (strict)
+    throw outcome.type === "failed"
+      ? outcome.error
+      : new Error(`Resource close timed out: ${name}`);
   if (outcome.type === "timed_out") {
     logger.warn("Session resource close timed out", {
       event: "session.resource_close.timed_out",

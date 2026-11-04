@@ -57,6 +57,9 @@ import {
   getOffPeakRequestAuthBuilder,
   disposeServiceResources,
   disposeServiceResourcesAndWait,
+  prepareForDataDirectoryMigration,
+  reserveDataDirectoryMigration,
+  cancelDataDirectoryMigration,
   AutomationRepo,
   OffPeakTaskRepo,
   OffPeakTaskService,
@@ -136,6 +139,7 @@ import { flushHostE2ECoverage } from "./e2eCoverage.js";
 import { runHostShutdownPhases, type HostShutdownResult } from "./hostShutdownPhases.js";
 import { initializeHostApiNetworkTransportOwner } from "./hostInitialization.js";
 import { createHostUncaughtExceptionHandler } from "./hostUncaughtExceptionGuard.js";
+import { HostPendingWork } from "./hostPendingWork.js";
 import {
   recordCronRunOutcomeBestEffort,
   startManualClaimHeartbeat,
@@ -366,6 +370,7 @@ const logger = {
 
 const cronAutomationRepo = new AutomationRepo();
 const cronRunSubscriptions = new Map<string, { dispose(): void }>();
+const hostBackgroundWork = new HostPendingWork();
 
 // ---- 闲时任务（off-peak）派发：与 cron 并行的独立链路（表/消息/常量互不复用）----
 const offPeakTaskRepo = new OffPeakTaskRepo();
@@ -512,7 +517,7 @@ async function finalizeOffPeakRun(params: {
     `off-peak run finished task=${params.offPeakTaskId} status=${status} filesChanged=${filesChanged ?? "n/a"}`,
   );
   // 后台完成统一置未读，打开 task 时由导航链路清除（与 cron 同款）。
-  void params.zcodeTaskService.setTaskUnread({
+  await params.zcodeTaskService.setTaskUnread({
     taskId: params.taskId,
     workspacePath: params.workspacePath,
     ...(params.workspaceIdentity ? { workspaceIdentity: params.workspaceIdentity } : {}),
@@ -534,15 +539,19 @@ function trackOffPeakRunOutcome(params: {
     (result) => {
       if (result.inputId !== params.traceId) return;
       disposeOffPeakRunSubscription(key);
-      void finalizeOffPeakRun({
-        zcodeTaskService: params.zcodeTaskService,
-        offPeakTaskId: params.offPeakTaskId,
-        taskId: params.taskId,
-        workspacePath: params.workspacePath,
-        ...(params.workspaceIdentity ? { workspaceIdentity: params.workspaceIdentity } : {}),
-        outcome: result.outcome,
-        ...(result.error ? { error: result.error } : {}),
-      }).catch((error) => logger.warn("off-peak 终态回写失败:", error));
+      void hostBackgroundWork
+        .track(() =>
+          finalizeOffPeakRun({
+            zcodeTaskService: params.zcodeTaskService,
+            offPeakTaskId: params.offPeakTaskId,
+            taskId: params.taskId,
+            workspacePath: params.workspacePath,
+            ...(params.workspaceIdentity ? { workspaceIdentity: params.workspaceIdentity } : {}),
+            outcome: result.outcome,
+            ...(result.error ? { error: result.error } : {}),
+          }),
+        )
+        .catch((error) => logger.warn("off-peak 终态回写失败:", error));
     },
   );
   offPeakRunSubscriptions.set(key, disposable);
@@ -759,11 +768,13 @@ function markCronRunOutcome(params: {
   outcome: ZCodeAutomationRunOutcome;
   error?: string;
 }): void {
-  void recordCronRunOutcomeBestEffort({
-    ...params,
-    repo: cronAutomationRepo,
-    logWarn: (message, error) => logger.warn(message, error),
-  });
+  void hostBackgroundWork.track(() =>
+    recordCronRunOutcomeBestEffort({
+      ...params,
+      repo: cronAutomationRepo,
+      logWarn: (message, error) => logger.warn(message, error),
+    }),
+  );
 }
 
 function disposeCronRunSubscription(key: string): void {
@@ -829,20 +840,24 @@ function trackCronRunOutcome(params: {
   const disposable = params.zcodeTaskService.onDynamicTaskTerminalOutcome(params.taskId)(
     (result) => {
       if (result.inputId !== params.traceId) return;
-      void settleCronRunTerminalOutcome({
-        ...params,
-        outcome: result.outcome,
-        error: result.error,
-        repo: cronAutomationRepo,
-        logWarn: (message, error) => logger.warn(message, error),
-      });
-      // 定时任务在后台完成后统一置为未读，真正打开 task 时再由导航链路清除。
-      void params.zcodeTaskService.setTaskUnread({
-        taskId: params.taskId,
-        workspacePath: params.workspacePath,
-        ...(params.workspaceIdentity ? { workspaceIdentity: params.workspaceIdentity } : {}),
-        unread: true,
-      });
+      void hostBackgroundWork
+        .track(async () => {
+          await settleCronRunTerminalOutcome({
+            ...params,
+            outcome: result.outcome,
+            error: result.error,
+            repo: cronAutomationRepo,
+            logWarn: (message, error) => logger.warn(message, error),
+          });
+          // 定时任务在后台完成后统一置为未读，真正打开 task 时再由导航链路清除。
+          await params.zcodeTaskService.setTaskUnread({
+            taskId: params.taskId,
+            workspacePath: params.workspacePath,
+            ...(params.workspaceIdentity ? { workspaceIdentity: params.workspaceIdentity } : {}),
+            unread: true,
+          });
+        })
+        .catch((error) => logger.warn("cron 终态回写失败:", error));
       disposeCronRunSubscription(key);
     },
   );
@@ -852,6 +867,7 @@ function trackCronRunOutcome(params: {
           ...params,
           repo: cronAutomationRepo,
           logWarn: (message, error) => logger.warn(message, error),
+          trackWork: (run) => hostBackgroundWork.track(run),
         })
       : null;
   cronRunSubscriptions.set(key, {
@@ -1617,6 +1633,10 @@ const hostResourceUsageResponder = createHostResourceUsageResponder({
 });
 let activeSessionRealtimePort: ReturnType<typeof createTaskRealtimeBridgeForHostInit> = null;
 let hasDisposedHostResources = false;
+let preparingDataDirectoryMigration = false;
+let dataDirectoryMigrationReservation: string | null = null;
+let closingDataDirectoryMigration = false;
+let pendingHostMessages = 0;
 let disposeHostResourcesInFlight: Promise<HostShutdownResult> | null = null;
 
 function requireActiveHostApiNetworkTransport(): HostApiNetworkTransport {
@@ -2248,12 +2268,12 @@ async function disposeHostResources(reason: string): Promise<HostShutdownResult>
     for (const key of Array.from(cronRunSubscriptions.keys())) {
       disposeCronRunSubscription(key);
     }
-    cronAutomationRepo.close();
+    cronAutomationRepo.close({ throwOnError: preparingDataDirectoryMigration });
     for (const key of Array.from(offPeakRunSubscriptions.keys())) {
       disposeOffPeakRunSubscription(key);
     }
     disposeOffPeakRuntime();
-    offPeakTaskRepo.close();
+    offPeakTaskRepo.close({ throwOnError: preparingDataDirectoryMigration });
 
     if (activeSessionRealtimePort) {
       activeSessionRealtimePort.dispose();
@@ -2274,7 +2294,10 @@ async function disposeHostResources(reason: string): Promise<HostShutdownResult>
           ? [
               {
                 name: "service-dispose",
-                run: () => disposeServiceResourcesAndWait(servicesToDispose),
+                run: () =>
+                  disposeServiceResourcesAndWait(servicesToDispose, {
+                    strict: preparingDataDirectoryMigration,
+                  }),
                 timeoutMs: 3_500,
               },
             ]
@@ -2282,7 +2305,14 @@ async function disposeHostResources(reason: string): Promise<HostShutdownResult>
       ],
       {
         phaseTimeoutMs: 5_000,
-        log: (message, details) => logger.warn(message, details),
+        log: (message, details) =>
+          logger.warn(message, {
+            ...details,
+            // Error 的 message/stack 不可枚举，嵌套 JSON 会变成 {}，保留严格关闭失败的真实原因。
+            ...(details.error instanceof Error
+              ? { error: details.error.message, stack: details.error.stack }
+              : {}),
+          }),
       },
     );
     if (shutdownResult.exitCode !== 0) {
@@ -2401,6 +2431,114 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
   }
 
   const msg = result.data;
+  if (
+    msg.type === HostMessageTypes.ReserveDataDirectoryMigration ||
+    msg.type === HostMessageTypes.CancelDataDirectoryMigration ||
+    msg.type === HostMessageTypes.PrepareDataDirectoryMigration
+  ) {
+    const request = msg;
+    const responseType =
+      request.type === HostMessageTypes.ReserveDataDirectoryMigration
+        ? HostResponseTypes.DataDirectoryMigrationReserved
+        : request.type === HostMessageTypes.CancelDataDirectoryMigration
+          ? HostResponseTypes.DataDirectoryMigrationCancelled
+          : HostResponseTypes.DataDirectoryMigrationPrepared;
+    try {
+      if (request.type === HostMessageTypes.CancelDataDirectoryMigration) {
+        if (closingDataDirectoryMigration)
+          throw new Error("Data directory migration is already closing");
+        if (
+          dataDirectoryMigrationReservation &&
+          dataDirectoryMigrationReservation !== request.requestId
+        )
+          throw new Error("Data directory reservation mismatch");
+        if (activeServices) await cancelDataDirectoryMigration(activeServices);
+        preparingDataDirectoryMigration = false;
+        dataDirectoryMigrationReservation = null;
+      } else {
+        if (
+          dataDirectoryMigrationReservation &&
+          dataDirectoryMigrationReservation !== request.requestId
+        )
+          throw new Error("Data directory reservation mismatch");
+        if (
+          request.type === HostMessageTypes.PrepareDataDirectoryMigration &&
+          dataDirectoryMigrationReservation !== request.requestId
+        )
+          throw new Error("Data directory migration was not reserved");
+        preparingDataDirectoryMigration = true;
+        hostBackgroundWork.assertIdle();
+        // 远端 connection 不具备本地搬盘的可撤销 idle 协议，不能靠运行数投影决定关闭它。
+        if (windowRemoteConnectionRegistry.getStats().connectionCount > 0)
+          throw new Error("DATA_DIRECTORY_BUSY: Disconnect remote workspaces before moving data");
+        if (
+          !activeServices ||
+          databaseStartup?.coordinator.snapshot.phase !== "ready" ||
+          pendingHostMessages > 0 ||
+          activeSessionRealtimePort?.hasPendingIncomingOwnerCommands()
+        )
+          throw new Error("Host still has pending work");
+        if (request.type === HostMessageTypes.ReserveDataDirectoryMigration) {
+          dataDirectoryMigrationReservation = request.requestId;
+          await reserveDataDirectoryMigration(activeServices);
+          // reserve 超时后的 cancel 可先返回；迟到的 reserve 不能重新确认已撤销的预约。
+          if (
+            !preparingDataDirectoryMigration ||
+            dataDirectoryMigrationReservation !== request.requestId
+          )
+            throw new Error("DATA_DIRECTORY_RESERVATION_CANCELLED");
+          hostBackgroundWork.assertIdle();
+        } else {
+          closingDataDirectoryMigration = true;
+          await prepareForDataDirectoryMigration(activeServices);
+          hostBackgroundWork.assertIdle();
+          const result = await disposeHostResources("data directory migration");
+          if (result.exitCode !== 0)
+            throw new Error(
+              `Data migration resource close failed: ${[...result.failedPhases, ...result.timedOutPhases].join(", ")}`,
+            );
+        }
+      }
+      parentPort.postMessage({ type: responseType, requestId: request.requestId, ok: true });
+    } catch (error) {
+      parentPort.postMessage({
+        type: responseType,
+        requestId: request.requestId,
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return;
+  }
+
+  if (
+    preparingDataDirectoryMigration &&
+    [
+      HostMessageTypes.DatabaseStartupControl,
+      HostMessageTypes.InitLocal,
+      HostMessageTypes.AttachServicePort,
+      HostMessageTypes.ConnectRemoteWorkspace,
+      HostMessageTypes.TaskOwnerCommandDeliver,
+      HostMessageTypes.ProviderProvisioningExecute,
+      HostMessageTypes.BindRemoteWorkspaceContext,
+      HostMessageTypes.BotRemoteWorkspaceRuntimePort,
+    ].includes(msg.type as never)
+  ) {
+    for (const transferredPort of e.ports ?? []) transferredPort.close();
+    return;
+  }
+  pendingHostMessages += 1;
+  try {
+    await handleHostMessage(e, msg);
+  } finally {
+    pendingHostMessages -= 1;
+  }
+});
+
+async function handleHostMessage(
+  e: Electron.MessageEvent,
+  msg: Extract<ReturnType<typeof parseHostIncomingMessageEvent>, { success: true }>["data"],
+): Promise<void> {
   if (msg.type === HostMessageTypes.NetworkCapture) {
     hostNetworkCapture.setCaptureId(msg.control.captureId);
     return;
@@ -2409,14 +2547,14 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
   if (msg.type === HostMessageTypes.DatabaseStartupControl) {
     if (msg.control.action === "snapshot") databaseStartup?.coordinator.publish();
     else if (msg.control.action === "retry")
-      void databaseStartup?.coordinator.retry(msg.control.attemptId);
+      await databaseStartup?.coordinator.retry(msg.control.attemptId);
     return;
   }
 
   if (msg.type === HostMessageTypes.CuaPipFocusChanged) {
     const service = activeServices?.getOptional(ICuaPipSessionService);
     if (service) {
-      void service.publishFocus(msg.event);
+      await service.publishFocus(msg.event);
     } else {
       // 取不到服务时过去静默丢弃，focus-changed 于是从链路上凭空消失
       // （dev 实测 0 条，正式包同期 92 条）。补这条才能把「main 没发」与
@@ -2427,7 +2565,7 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
   }
 
   if (msg.type === HostMessageTypes.ResourceUsageSnapshotRequest) {
-    void hostResourceUsageResponder.handleRequest(msg);
+    await hostResourceUsageResponder.handleRequest(msg);
     return;
   }
   if (msg.type === HostMessageTypes.ResourceUsageSnapshotCancel) {
@@ -2469,7 +2607,10 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
   }
 
   if (msg.type === HostMessageTypes.CronRun) {
-    if (databaseStartup?.coordinator.snapshot.phase !== "ready") {
+    if (
+      preparingDataDirectoryMigration ||
+      databaseStartup?.coordinator.snapshot.phase !== "ready"
+    ) {
       parentPort.postMessage({
         type: HostResponseTypes.CronRunResult,
         runId: msg.runId,
@@ -2479,7 +2620,7 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
       });
       return;
     }
-    void (async () => {
+    await (async () => {
       try {
         const dispatchResult = await dispatchCronRun({
           ...msg,
@@ -2505,7 +2646,10 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
   }
 
   if (msg.type === HostMessageTypes.OffPeakRun) {
-    if (databaseStartup?.coordinator.snapshot.phase !== "ready") {
+    if (
+      preparingDataDirectoryMigration ||
+      databaseStartup?.coordinator.snapshot.phase !== "ready"
+    ) {
       parentPort.postMessage({
         type: HostResponseTypes.OffPeakRunResult,
         offPeakTaskId: msg.offPeakTaskId,
@@ -2515,7 +2659,7 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
       });
       return;
     }
-    void (async () => {
+    await (async () => {
       try {
         const dispatchResult = await dispatchOffPeakRun(msg);
         parentPort.postMessage({
@@ -2541,7 +2685,7 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
 
   if (msg.type === HostMessageTypes.BrowserExecuteResult) {
     // main 的 WebContentsView+CDP 执行完 browser 命令，按 requestId 关联回 bridge 的 pending。
-    void browserControlMainBridge.handleResult({
+    await browserControlMainBridge.handleResult({
       requestId: msg.requestId,
       result: msg.result,
     });
@@ -2562,7 +2706,7 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
 
   if (msg.type === HostMessageTypes.SessionMessageDeliver) {
     const zcodeTaskService = activeServices?.getOptional(IZCodeTaskService);
-    if (!zcodeTaskService) {
+    if (preparingDataDirectoryMigration || !zcodeTaskService) {
       parentPort.postMessage({
         type: HostResponseTypes.SessionMessageDeliverResult,
         result: {
@@ -2576,7 +2720,7 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
       return;
     }
 
-    void zcodeTaskService
+    await zcodeTaskService
       .deliverSessionMessage(msg.request)
       .then((deliveryResult) => {
         parentPort.postMessage({
@@ -2605,7 +2749,7 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
       logger.warn("session message delivery result received before ZCode task service initialized");
       return;
     }
-    void zcodeTaskService.sendSessionMessageDeliveryResult(msg.result).catch((error) => {
+    await zcodeTaskService.sendSessionMessageDeliveryResult(msg.result).catch((error) => {
       logger.warn("failed to forward session message delivery result:", error);
     });
     return;
@@ -2634,7 +2778,7 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
       workspacePath: session.workspacePath ?? "/",
       workspaceIdentity: session.workspaceIdentity,
     } as const;
-    void Promise.resolve()
+    await Promise.resolve()
       .then(() =>
         (() => {
           const provisioningService = getRemoteProviderProvisioningExecutor(
@@ -2678,7 +2822,7 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
     logger.info(
       `connecting window-scoped remote source, requestId=${msg.requestId}, target=${formatRemoteTargetForLog(msg.target)}`,
     );
-    void remoteConnectionProgressContext
+    await remoteConnectionProgressContext
       .run(msg.requestId, () =>
         windowRemoteConnectionRegistry.connect({
           requestId: msg.requestId,
@@ -2781,7 +2925,7 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
         current.generation,
       );
     }
-    void workspaceReady.catch((error) => {
+    await workspaceReady.catch((error) => {
       logger.warn(
         `failed to prepare bound remote workspace, remoteSessionId=${msg.remoteSessionId}`,
         error,
@@ -2804,7 +2948,7 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
   if (msg.type === HostMessageTypes.DisposeRemoteWorkspaceSession) {
     const disposedSession = windowRemoteConnectionRegistry.getSession(msg.remoteSessionId);
     windowHostAttachmentRegistry.detachRemoteSessionAttachments(msg.remoteSessionId);
-    void windowRemoteConnectionRegistry
+    await windowRemoteConnectionRegistry
       .disposeSession(msg.remoteSessionId)
       .then(() => {
         if (disposedSession?.workspacePath && disposedSession.workspaceIdentity) {
@@ -2933,7 +3077,9 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
         ),
       initializeServices: async () => {
         logger.info("initializing local services");
-        activeSessionRealtimePort = createTaskRealtimeBridgeForHostInit(msg, parentPort);
+        activeSessionRealtimePort = createTaskRealtimeBridgeForHostInit(msg, parentPort, {
+          acceptOwnerCommand: () => !preparingDataDirectoryMigration,
+        });
         // 旧 Team 补组织必须与网络代理读取共用同一个 Setting 实例及写队列。
         // 只注入 service 会跳过默认装配分支，导致缺组织的升级用户永远无法恢复连接。
         const { service: settingService, prepareLegacyAccountConnections } =
@@ -2948,7 +3094,14 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
         });
         const services = await initializeHostApiNetworkTransportOwner({
           transport: hostApiNetworkTransport,
-          log: (message, details) => logger.warn(message, details),
+          log: (message, details) =>
+            logger.warn(message, {
+              ...details,
+              // Error 的 message/stack 不可枚举，嵌套 JSON 会变成 {}，保留严格关闭失败的真实原因。
+              ...(details.error instanceof Error
+                ? { error: details.error.message, stack: details.error.stack }
+                : {}),
+            }),
           establishOwner: () => {
             const initializedServices = createLocalServices({
               parentPort,
@@ -3061,7 +3214,7 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
     });
     await databaseStartup.coordinator.start();
   }
-});
+}
 
 async function setupRemoteConnection(
   target: RemoteTarget,

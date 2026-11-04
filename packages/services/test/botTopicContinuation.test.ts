@@ -26,7 +26,9 @@ describe("topic stop before continuation", () => {
   it("requests stop before attachments finish and waits for authoritative completion", async () => {
     const f = fixture();
     const material = deferred<string>();
+    expect(f.controller.hasPending()).toBe(false);
     f.controller.receive("b", () => material.promise);
+    expect(f.controller.hasPending()).toBe(true);
     await flush();
     expect(f.stopAndWait).toHaveBeenCalledWith("old-run");
     material.resolve("B");
@@ -35,6 +37,7 @@ describe("topic stop before continuation", () => {
     f.stopped.resolve();
     await f.controller.settled();
     expect(f.submit).toHaveBeenCalledWith(["B"]);
+    expect(f.controller.hasPending()).toBe(false);
   });
 
   it("combines all arrivals during stop in arrival order even when preparation completes backwards", async () => {

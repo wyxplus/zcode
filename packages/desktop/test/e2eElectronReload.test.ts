@@ -12,6 +12,7 @@ describe("desktop e2e Electron reload", () => {
       events.push("delete");
     });
     const browser = {
+      sessionId: "old-session",
       get deleteSession() {
         return deleteSession;
       },
@@ -45,15 +46,27 @@ describe("desktop e2e Electron reload", () => {
         afterElectronProcessExit: async () => {
           events.push("isolated-mutation");
         },
-        collectProcessTreePids: () => [4242],
-        isProcessAlive: () => false,
+        collectProcessTreePids: () => {
+          events.push("capture-process-tree");
+          return [4242];
+        },
+        requestPreparedAppExit: async () => {
+          events.push("prepared-exit");
+        },
+        isProcessAlive: () => {
+          events.push("confirmed-exit");
+          return false;
+        },
         reloadElectronServiceBridge: async () => {
           events.push("service-reload-probe");
         },
       } as never,
     );
 
-    expect(events.indexOf("delete")).toBeLessThan(events.indexOf("isolated-mutation"));
+    expect(events.indexOf("capture-process-tree")).toBeLessThan(events.indexOf("prepared-exit"));
+    expect(events.indexOf("prepared-exit")).toBeLessThan(events.indexOf("delete"));
+    expect(events.indexOf("delete")).toBeLessThan(events.indexOf("confirmed-exit"));
+    expect(events.indexOf("confirmed-exit")).toBeLessThan(events.indexOf("isolated-mutation"));
     expect(events.indexOf("isolated-mutation")).toBeLessThan(events.indexOf("reload-start"));
     expect(events.indexOf("reload-new-session")).toBeLessThan(
       events.indexOf("service-reload-probe"),

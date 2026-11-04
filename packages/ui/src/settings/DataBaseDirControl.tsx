@@ -1,7 +1,6 @@
 import { FolderOpen, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import {
-  isDataBaseDirForbiddenWindowsInstallDirError,
   TID_SETTINGS_DATA_BASE_DIR_BROWSE,
   TID_SETTINGS_DATA_BASE_DIR_INPUT,
   TID_SETTINGS_DATA_BASE_DIR_SAVE,
@@ -10,6 +9,7 @@ import {
 import { Button } from "@/components/ui/button.js";
 import { Input } from "@/components/ui/input.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { dataDirectoryMigrationErrorMessageId } from "./dataDirectoryMigrationError.js";
 
 export function DataBaseDirControl({
   dataBaseDir,
@@ -27,16 +27,15 @@ export function DataBaseDirControl({
   const [localDataBaseDir, setLocalDataBaseDir] = useState(effectiveDir);
   const [isPickingDataBaseDir, setIsPickingDataBaseDir] = useState(false);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [errorDetail, setErrorDetail] = useState("");
   const [errorMessageId, setErrorMessageId] = useState("settings.dataBaseDirCopyFailed");
 
   useEffect(() => {
-    if (saveState !== "saved") {
-      setLocalDataBaseDir(effectiveDir);
-    }
-  }, [effectiveDir, saveState]);
+    setLocalDataBaseDir(effectiveDir);
+  }, [effectiveDir]);
 
   const isDirty = localDataBaseDir.trim() !== effectiveDir;
-  const isSaving = saveState === "saving";
+  const isSaving = saveState === "saving" || saveState === "saved";
 
   const handleBrowseDataBaseDir = useCallback(async () => {
     setIsPickingDataBaseDir(true);
@@ -47,7 +46,7 @@ export function DataBaseDirControl({
       }
 
       // 之前这里允许手输任意字符串，用户填错路径后仍会触发整份数据复制。
-      // 这里改成只接受系统目录弹窗返回的真实文件夹路径，先更新草稿值，再由“保存”统一触发迁移，
+      // 这里只接受系统目录弹窗返回的真实文件夹路径，先更新草稿值，再显式触发迁移并重启，
       // 避免把“浏览目录”和“执行数据迁移”这两个风险不同的动作混在一起。
       setLocalDataBaseDir(selectedDir);
       if (saveState !== "idle") {
@@ -60,20 +59,16 @@ export function DataBaseDirControl({
 
   const handleSave = useCallback(async () => {
     const trimmed = localDataBaseDir.trim();
-    const newValue = trimmed === defaultHomeDir ? "" : trimmed;
     setSaveState("saving");
     try {
-      await onDataBaseDirChange(newValue);
+      await onDataBaseDirChange(trimmed);
       setSaveState("saved");
     } catch (error) {
-      setErrorMessageId(
-        isDataBaseDirForbiddenWindowsInstallDirError(error)
-          ? "settings.dataBaseDirForbiddenInstallDir"
-          : "settings.dataBaseDirCopyFailed",
-      );
+      setErrorMessageId(dataDirectoryMigrationErrorMessageId(error));
+      setErrorDetail(error instanceof Error ? error.message : String(error));
       setSaveState("error");
     }
-  }, [defaultHomeDir, localDataBaseDir, onDataBaseDirChange]);
+  }, [localDataBaseDir, onDataBaseDirChange]);
 
   return (
     <div className="flex w-[320px] min-w-0 flex-col gap-2">
@@ -110,7 +105,7 @@ export function DataBaseDirControl({
           {isSaving ? (
             <Loader2 className="size-4 animate-spin" />
           ) : (
-            intl.formatMessage({ id: "settings.dataBaseDirSave" })
+            intl.formatMessage({ id: "settings.dataBaseDirMigrate" })
           )}
         </Button>
       </div>
@@ -131,13 +126,19 @@ export function DataBaseDirControl({
           {intl.formatMessage({ id: "settings.dataBaseDirRestartRequired" })}
         </p>
       ) : saveState === "error" ? (
-        <p
+        <div
           data-testid={TID_SETTINGS_DATA_BASE_DIR_STATUS}
           data-state="error"
           className="text-ui-base text-destructive"
         >
-          {intl.formatMessage({ id: errorMessageId })}
-        </p>
+          <p>{intl.formatMessage({ id: errorMessageId })}</p>
+          <details className="mt-1">
+            <summary className="cursor-pointer">
+              {intl.formatMessage({ id: "settings.dataBaseDirErrorDetails" })}
+            </summary>
+            <p className="mt-1 break-words text-ui-sm">{errorDetail}</p>
+          </details>
+        </div>
       ) : null}
     </div>
   );

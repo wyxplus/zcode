@@ -1,8 +1,4 @@
-import type {
-  BotConfig,
-  BotProviderCallbackResult,
-  BotsConfigFile,
-} from "@zcode/shared";
+import type { BotConfig, BotProviderCallbackResult, BotsConfigFile } from "@zcode/shared";
 import type { ICredentialService } from "../credential/credential.js";
 import { getWeixinUpdates } from "./providers/weixinProvider.js";
 import {
@@ -25,10 +21,7 @@ interface WeixinChannelRuntimeDeps {
   readConfig(): Promise<BotsConfigFile>;
   readWeixinGetUpdatesBuf(botId: string): Promise<string | undefined>;
   writeWeixinGetUpdatesBuf(botId: string, buf: string): Promise<void>;
-  processProviderCallback(
-    provider: "weixin",
-    payload: unknown,
-  ): Promise<BotProviderCallbackResult>;
+  processProviderCallback(provider: "weixin", payload: unknown): Promise<BotProviderCallbackResult>;
   getUpdates?: typeof getWeixinUpdates;
   acquirePollingLock?: typeof acquireWeixinPollingLock;
 }
@@ -42,6 +35,7 @@ export function createWeixinChannelRuntime(deps: WeixinChannelRuntimeDeps) {
 
   const runtimes = new Map<string, RuntimeEntry>();
   const refreshQueue = createLatestRuntimeRefreshQueue();
+  const cleanupErrors: unknown[] = [];
 
   async function getConnectionFingerprint(bot: BotConfig): Promise<string> {
     const credential = bot.credentialRef
@@ -55,9 +49,7 @@ export function createWeixinChannelRuntime(deps: WeixinChannelRuntimeDeps) {
   }
 
   async function pollBot(bot: BotConfig, signal: AbortSignal): Promise<void> {
-    const token = bot.credentialRef
-      ? await deps.credentialService.load(bot.credentialRef)
-      : null;
+    const token = bot.credentialRef ? await deps.credentialService.load(bot.credentialRef) : null;
     if (!token?.trim()) {
       deps.statusSink.setRuntimeStatus({
         botId: bot.id,
@@ -71,10 +63,7 @@ export function createWeixinChannelRuntime(deps: WeixinChannelRuntimeDeps) {
     while (!signal.aborted) {
       let lock: Awaited<ReturnType<typeof acquireWeixinPollingLock>>;
       try {
-        lock = await (deps.acquirePollingLock ?? acquireWeixinPollingLock)(
-          token,
-          bot.id,
-        );
+        lock = await (deps.acquirePollingLock ?? acquireWeixinPollingLock)(token, bot.id);
       } catch (error) {
         if (signal.aborted) return;
         // Bugfix：每个窗口都有独立 host。微信锁 I/O 失败必须退避重试，不能让后台 Promise 退出。
@@ -186,6 +175,7 @@ export function createWeixinChannelRuntime(deps: WeixinChannelRuntimeDeps) {
       } finally {
         // Bugfix：微信 buf 是第三方队列确认点；只有持锁 owner 能消费和写入，退出时必须释放给其他 host 接管。
         await lock.release().catch((error: unknown) => {
+          cleanupErrors.push(error);
           deps.logger.debug(
             undefined,
             `release Weixin polling lock failed bot=${bot.id}: ${error instanceof Error ? error.message : String(error)}`,
@@ -261,10 +251,7 @@ export function createWeixinChannelRuntime(deps: WeixinChannelRuntimeDeps) {
     }
     const activeWeixinIds = new Set(
       currentConfig.bots
-        .filter(
-          (bot) =>
-            bot.provider === "weixin" && bot.enabled && bot.credentialRef,
-        )
+        .filter((bot) => bot.provider === "weixin" && bot.enabled && bot.credentialRef)
         .map((bot) => bot.id),
     );
     for (const botId of runtimes.keys()) {
@@ -321,18 +308,28 @@ export function createWeixinChannelRuntime(deps: WeixinChannelRuntimeDeps) {
     });
   }
 
-  async function dispose(): Promise<void> {
+  async function dispose(options?: { strict?: boolean }): Promise<void> {
     refreshQueue.invalidate();
+    // 失效代次只阻止后续重建；迁移还必须等已开始的配置刷新和锁清理真实结束。
+    if (options?.strict) await refreshQueue.settled();
     const activeRuntimes = [...runtimes.values()];
     for (const runtime of activeRuntimes) {
       runtime.controller.abort();
     }
     // Bugfix：微信 buf 只能由锁 owner 提交；销毁必须等待请求退出和 finally 释放锁后才完成。
-    await Promise.allSettled(activeRuntimes.map((runtime) => runtime.done));
+    const results = await Promise.allSettled(activeRuntimes.map((runtime) => runtime.done));
     for (const [botId, runtime] of runtimes) {
       if (activeRuntimes.includes(runtime)) {
         runtimes.delete(botId);
       }
+    }
+    if (options?.strict) {
+      // 普通退出保留best-effort；迁移不能把连接/锁关闭失败当成安全停写确认。
+      const failures = [
+        ...cleanupErrors,
+        ...results.flatMap((result) => (result.status === "rejected" ? [result.reason] : [])),
+      ];
+      if (failures.length) throw new AggregateError(failures, "Bot provider resource close failed");
     }
   }
 

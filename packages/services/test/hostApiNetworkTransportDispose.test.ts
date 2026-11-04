@@ -36,4 +36,15 @@ describe("Host API network transport lifecycle", () => {
     expect(transport.disposeAndWait).toHaveBeenCalledOnce();
     expect(transport.dispose).not.toHaveBeenCalled();
   });
+
+  it("迁移严格关闭传播失败，普通退出仍保留 best-effort 语义", async () => {
+    const services = new ServiceCollection();
+    const transport = createTransportDouble();
+    transport.disposeAndWait.mockRejectedValue(new Error("transport close failed"));
+    registerHostApiNetworkTransportForDispose(services, transport);
+    await expect(disposeServiceResourcesAndWait(services, { strict: true })).rejects.toThrow(
+      "close failed",
+    );
+    await expect(disposeServiceResourcesAndWait(services)).resolves.toBeUndefined();
+  });
 });

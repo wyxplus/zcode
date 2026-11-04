@@ -456,6 +456,7 @@ export const PlatformChannels = {
   SetAutoDownloadAndInstallUpdates: "zcode:set-auto-download-and-install-updates",
   /** Renderer → Main：查询桌面端正在运行的会话数量 */
   GetDesktopSessionActivity: "zcode:get-desktop-session-activity",
+  MigrateDataDirectory: "zcode:migrate-data-directory",
   /** Renderer → Main：读取当前窗口页面缩放档位 */
   GetDesktopZoomLevel: "zcode:get-desktop-zoom-level",
   /** Main → Renderer：当前窗口页面缩放档位变化 */
@@ -602,6 +603,9 @@ export const HostMessageTypes = {
   DetachServicePort: "detach-service-port",
   /** 窗口关闭，清理资源 */
   Dispose: "dispose",
+  PrepareDataDirectoryMigration: "prepare-data-directory-migration",
+  ReserveDataDirectoryMigration: "reserve-data-directory-migration",
+  CancelDataDirectoryMigration: "cancel-data-directory-migration",
   /** 广播消息中转 */
   Broadcast: "broadcast",
   /** main → host：跨窗口原子 claim 结果 */
@@ -648,6 +652,9 @@ export const HostMessageTypes = {
 
 /** host process → main process 的反馈消息类型 */
 export const HostResponseTypes = {
+  DataDirectoryMigrationPrepared: "data-directory-migration-prepared",
+  DataDirectoryMigrationReserved: "data-directory-migration-reserved",
+  DataDirectoryMigrationCancelled: "data-directory-migration-cancelled",
   DatabaseStartupState: "database-startup-state",
   /** window Host → main：按 requestId 上报远程连接过程日志 */
   RemoteWorkspaceConnectionLog: "remote-workspace-connection-log",
@@ -1255,6 +1262,10 @@ export interface PlatformChannelMap {
     response: {
       runningAgentSessionCount: number;
     };
+  };
+  [PlatformChannels.MigrateDataDirectory]: {
+    request: string;
+    response: void;
   };
   [PlatformChannels.GetDesktopZoomLevel]: {
     request: void;

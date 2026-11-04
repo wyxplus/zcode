@@ -740,9 +740,12 @@ const BOT_ELICITATION_SUBMIT_OPTION_ID = "__submit__";
 const BOT_ELICITATION_SKIP_OPTION_ID = "__skip__";
 const BOT_ELICITATION_FORM_VALUE_PREFIX = "__form__:";
 
-export function createBotsService(
-  deps: BotsServiceDeps,
-): IBotsService & { disposeAll(): void; disposeAllAndWait(): Promise<void> } {
+export function createBotsService(deps: BotsServiceDeps): IBotsService & {
+  disposeAll(): void;
+  disposeAllAndWait(options?: { strict?: boolean }): Promise<void>;
+  reserveForDataDirectoryMigration(): Promise<void>;
+  cancelDataDirectoryMigration(): void;
+} {
   const runStartupBackgroundTasks = deps.runStartupBackgroundTasks !== false;
   const repo = deps.repo ?? new BotsRepo();
   const bindCodes = new Map<string, BindCodeRecord>();
@@ -818,6 +821,11 @@ export function createBotsService(
   const recentRemoteReconnectDeliveryAtByKey = new Map<string, number>();
   const recentInboundDeliveryAtByKey = new Map<string, number>();
   const inboundProcessingQueuesByContext = new Map<string, Promise<void>>();
+  let migrationSealed = false;
+  let activeInboundCalls = 0;
+  let pendingStateWrites = 0;
+  let pendingStreamEvents = 0;
+  let startupPending = runStartupBackgroundTasks;
   let botStorageMigrationPromise: Promise<void> | null = null;
   const cachedWorkspaceRefsByKey = new Map<
     string,
@@ -847,9 +855,14 @@ export function createBotsService(
   };
   let service: IBotsService & {
     disposeAll(): void;
-    disposeAllAndWait(): Promise<void>;
+    disposeAllAndWait(options?: { strict?: boolean }): Promise<void>;
+    reserveForDataDirectoryMigration(): Promise<void>;
+    cancelDataDirectoryMigration(): void;
   };
   let shutdownPromise: Promise<void> | null = null;
+  let handleAcceptedInboundMessage: IBotsService["handleInboundMessage"];
+  // Provider runtime 直接持有此回调，不能只包裹RPC service方法而遗漏原生长连接入站。
+  const processProviderCallback = gateInbound(processProviderCallbackUnchecked);
 
   function onDeliveryResult(bot: BotConfig, deliveryError: string | undefined): void {
     // 收消息正常不代表回复已投递，不能把投递错误混成连接错误。
@@ -1166,7 +1179,14 @@ export function createBotsService(
     },
   });
   function serializeStateWrite(operation: () => Promise<void>): Promise<void> {
-    const next = stateWriteTail.catch(() => undefined).then(operation);
+    // 后台Provider回执不经过RPC；排队时就计数，不能把尚未写入的Bot状态当成idle。
+    pendingStateWrites += 1;
+    const next = stateWriteTail
+      .catch(() => undefined)
+      .then(operation)
+      .finally(() => {
+        pendingStateWrites -= 1;
+      });
     stateWriteTail = next;
     return next;
   }
@@ -1188,66 +1208,63 @@ export function createBotsService(
         })
         .map((bot) => bot.id),
     );
-    const operation = stateWriteTail
-      .catch(() => undefined)
-      .then(async () => {
-        const state = await repo.readState();
-        let changed = false;
-        for (const [key, context] of Object.entries(state.bots)) {
-          const group = context.group;
-          if (!group) {
-            const before = previous.bots.find((item) => item.id === context.botId);
-            const after = saved.bots.find((item) => item.id === context.botId);
-            if (changedBindings.has(context.botId) || before?.enabled !== after?.enabled) {
-              if (
-                changedBindings.has(context.botId) &&
-                before?.provider === "weixin" &&
-                context.privateRecipientId
-              )
-                await deps.credentialService.delete(
-                  weixinContextKey(before, context.privateRecipientId),
-                );
-              state.bots[key] = {
-                ...context,
-                privateBindingId: randomUUID(),
-                ...(changedBindings.has(context.botId) ? { privateRecipientId: undefined } : {}),
-              };
-              changed = true;
-            }
-            continue;
+    const operation = serializeStateWrite(async () => {
+      const state = await repo.readState();
+      let changed = false;
+      for (const [key, context] of Object.entries(state.bots)) {
+        const group = context.group;
+        if (!group) {
+          const before = previous.bots.find((item) => item.id === context.botId);
+          const after = saved.bots.find((item) => item.id === context.botId);
+          if (changedBindings.has(context.botId) || before?.enabled !== after?.enabled) {
+            if (
+              changedBindings.has(context.botId) &&
+              before?.provider === "weixin" &&
+              context.privateRecipientId
+            )
+              await deps.credentialService.delete(
+                weixinContextKey(before, context.privateRecipientId),
+              );
+            state.bots[key] = {
+              ...context,
+              privateBindingId: randomUUID(),
+              ...(changedBindings.has(context.botId) ? { privateRecipientId: undefined } : {}),
+            };
+            changed = true;
           }
-          const current = saved.bots.find((bot) => bot.id === context.botId);
-          if (!changedBindings.has(context.botId) && current?.providerUserId === group.ownerId)
-            continue;
-          const originalBot = previous.bots.find((bot) => bot.id === context.botId);
-          if (group.threadId && originalBot)
-            invalidatedTopics.push({
-              botId: context.botId,
-              provider: originalBot.provider,
-              chatType: "group",
-              chatId: group.chatId,
-              threadId: group.threadId,
-              providerUserId: group.ownerId,
-            });
-          state.bots[key] = {
-            ...context,
-            group: {
-              ...group,
-              enabled: false,
-              authorizationId: randomUUID(),
-              deliveries: Object.fromEntries(
-                Object.entries(group.deliveries ?? {}).map(([id, result]) => [
-                  id,
-                  result.status === "sent" ? result : { ...result, status: "invalidated" as const },
-                ]),
-              ),
-            },
-          };
-          changed = true;
+          continue;
         }
-        if (changed) await repo.writeState(state);
-      });
-    stateWriteTail = operation;
+        const current = saved.bots.find((bot) => bot.id === context.botId);
+        if (!changedBindings.has(context.botId) && current?.providerUserId === group.ownerId)
+          continue;
+        const originalBot = previous.bots.find((bot) => bot.id === context.botId);
+        if (group.threadId && originalBot)
+          invalidatedTopics.push({
+            botId: context.botId,
+            provider: originalBot.provider,
+            chatType: "group",
+            chatId: group.chatId,
+            threadId: group.threadId,
+            providerUserId: group.ownerId,
+          });
+        state.bots[key] = {
+          ...context,
+          group: {
+            ...group,
+            enabled: false,
+            authorizationId: randomUUID(),
+            deliveries: Object.fromEntries(
+              Object.entries(group.deliveries ?? {}).map(([id, result]) => [
+                id,
+                result.status === "sent" ? result : { ...result, status: "invalidated" as const },
+              ]),
+            ),
+          },
+        };
+        changed = true;
+      }
+      if (changed) await repo.writeState(state);
+    });
     await operation;
     // 授权变更还必须失效尚未提交的材料，不能等旧准备返回后再生成回复。
     await Promise.all(invalidatedTopics.map(cancelTopicInputs));
@@ -1265,144 +1282,138 @@ export function createBotsService(
     updateAuthorization = false,
     expectedTaskId?: string | null,
   ): Promise<void> {
-    const next = stateWriteTail
-      .catch(() => undefined)
-      .then(async () => {
-        const state = await repo.readState();
-        const key = getBotStateKey(context);
-        const latest = state.bots[key];
-        const latestGroup = latest?.group;
-        if (
-          !context.group &&
-          expectedTaskId !== undefined &&
-          (latest?.activeTaskId !== expectedTaskId ||
-            latest?.privateBindingId !== context.privateBindingId)
-        )
-          return;
-        // 群事件可能在停用、换绑或切换任务前开始处理；旧事件不能恢复已经撤销的关联。
-        if (
-          context.group &&
-          !updateAuthorization &&
-          latestGroup &&
-          (latestGroup.authorizationId !== context.group.authorizationId ||
-            (expectedTaskId !== undefined && latest?.activeTaskId !== expectedTaskId))
-        )
-          return;
-        const group =
-          context.group && latestGroup && !updateAuthorization
-            ? {
-                ...context.group,
-                enabled: latestGroup.enabled,
-                ownerId: latestGroup.ownerId,
-                authorizationId: latestGroup.authorizationId,
-                // 其他话题可能已更新群级历史开关，旧输入回写不能覆盖最新配置。
-                historyEnabled: latestGroup.historyEnabled,
-                topicActive: latestGroup.topicActive ?? context.group.topicActive,
-                taskIds: [...new Set([...latestGroup.taskIds, ...context.group.taskIds])],
-                // 已确认的 admission 是终态，迟到的流事件不能写回 pending。
-                inputs: Object.fromEntries(
-                  Object.entries({ ...latestGroup.inputs, ...context.group.inputs }).map(
-                    ([id, input]) => {
-                      const latestInput = latestGroup.inputs?.[id];
-                      const selected =
-                        latestInput?.admission === "accepted" ||
-                        latestInput?.admission === "rejected"
-                          ? latestInput
-                          : input;
-                      // 流事件可能先于 admission 返回；写回接收结果时保留已推进的卡片状态。
-                      return [
-                        id,
-                        { ...selected, progress: latestInput?.progress ?? selected.progress },
-                      ];
-                    },
-                  ),
-                ),
-                taskWorkspaces: { ...latestGroup.taskWorkspaces, ...context.group.taskWorkspaces },
-                topicAliases: latestGroup.topicAliases,
-                deliveries: latestGroup.deliveries,
-              }
-            : context.group;
-        // 自动互答次数由入口串行持久化；迟到的任务/授权回写不能用旧快照恢复额度。
-        if (group && latestGroup?.autoReplyGuard) group.autoReplyGuard = latestGroup.autoReplyGuard;
-        // 背景检查点由入口/接收提交更新，旧任务快照不能覆盖或复活它。
-        if (group && latestGroup) group.backgroundHistory = latestGroup.backgroundHistory;
-        if (group && (!group.enabled || state.bots[key]?.activeTaskId !== context.activeTaskId)) {
-          group.deliveries = Object.fromEntries(
-            Object.entries(group.deliveries ?? {}).map(([id, entry]) => [
-              id,
-              entry.status === "sent" ? entry : { ...entry, status: "invalidated" as const },
-            ]),
-          );
-        }
-        const taskIds =
-          group && context.activeTaskId
-            ? [...new Set([...group.taskIds, context.activeTaskId])]
-            : group?.taskIds;
-        state.bots[key] = {
-          ...context,
-          ...(!group
-            ? {
-                privateBindingId:
-                  latest?.activeTaskId === context.activeTaskId &&
-                  getWorkspaceKey(latest.workspacePath, latest.workspaceIdentity) ===
-                    getWorkspaceKey(context.workspacePath, context.workspaceIdentity)
-                    ? (latest.privateBindingId ?? randomUUID())
-                    : randomUUID(),
-              }
-            : {}),
-          ...(group
-            ? {
-                group: {
-                  ...group,
-                  taskIds: taskIds!,
-                  taskWorkspaces: {
-                    ...group.taskWorkspaces,
-                    ...(context.activeTaskId
-                      ? {
-                          [context.activeTaskId]: {
-                            workspacePath: context.workspacePath,
-                            workspaceIdentity: context.workspaceIdentity,
-                          },
-                        }
-                      : {}),
+    const next = serializeStateWrite(async () => {
+      const state = await repo.readState();
+      const key = getBotStateKey(context);
+      const latest = state.bots[key];
+      const latestGroup = latest?.group;
+      if (
+        !context.group &&
+        expectedTaskId !== undefined &&
+        (latest?.activeTaskId !== expectedTaskId ||
+          latest?.privateBindingId !== context.privateBindingId)
+      )
+        return;
+      // 群事件可能在停用、换绑或切换任务前开始处理；旧事件不能恢复已经撤销的关联。
+      if (
+        context.group &&
+        !updateAuthorization &&
+        latestGroup &&
+        (latestGroup.authorizationId !== context.group.authorizationId ||
+          (expectedTaskId !== undefined && latest?.activeTaskId !== expectedTaskId))
+      )
+        return;
+      const group =
+        context.group && latestGroup && !updateAuthorization
+          ? {
+              ...context.group,
+              enabled: latestGroup.enabled,
+              ownerId: latestGroup.ownerId,
+              authorizationId: latestGroup.authorizationId,
+              // 其他话题可能已更新群级历史开关，旧输入回写不能覆盖最新配置。
+              historyEnabled: latestGroup.historyEnabled,
+              topicActive: latestGroup.topicActive ?? context.group.topicActive,
+              taskIds: [...new Set([...latestGroup.taskIds, ...context.group.taskIds])],
+              // 已确认的 admission 是终态，迟到的流事件不能写回 pending。
+              inputs: Object.fromEntries(
+                Object.entries({ ...latestGroup.inputs, ...context.group.inputs }).map(
+                  ([id, input]) => {
+                    const latestInput = latestGroup.inputs?.[id];
+                    const selected =
+                      latestInput?.admission === "accepted" || latestInput?.admission === "rejected"
+                        ? latestInput
+                        : input;
+                    // 流事件可能先于 admission 返回；写回接收结果时保留已推进的卡片状态。
+                    return [
+                      id,
+                      { ...selected, progress: latestInput?.progress ?? selected.progress },
+                    ];
                   },
-                },
-              }
-            : {}),
-          updatedAt: Date.now(),
-        };
-        if (updateAuthorization && group && !group.threadId) {
-          // 群授权是单一权威；停用或换绑必须在同一次写入中使所有话题卡片失效。
-          for (const [topicKey, topic] of Object.entries(state.bots)) {
-            if (
-              topic.botId !== context.botId ||
-              topic.group?.chatId !== group.chatId ||
-              !topic.group.threadId
-            )
-              continue;
-            stopGroupSynchronization(topic);
-            state.bots[topicKey] = {
-              ...topic,
-              group: {
-                ...topic.group,
-                enabled: group.enabled,
-                ownerId: group.ownerId,
-                authorizationId: group.authorizationId,
-                deliveries: Object.fromEntries(
-                  Object.entries(topic.group.deliveries ?? {}).map(([id, result]) => [
-                    id,
-                    result.status === "sent"
-                      ? result
-                      : { ...result, status: "invalidated" as const },
-                  ]),
                 ),
+              ),
+              taskWorkspaces: { ...latestGroup.taskWorkspaces, ...context.group.taskWorkspaces },
+              topicAliases: latestGroup.topicAliases,
+              deliveries: latestGroup.deliveries,
+            }
+          : context.group;
+      // 自动互答次数由入口串行持久化；迟到的任务/授权回写不能用旧快照恢复额度。
+      if (group && latestGroup?.autoReplyGuard) group.autoReplyGuard = latestGroup.autoReplyGuard;
+      // 背景检查点由入口/接收提交更新，旧任务快照不能覆盖或复活它。
+      if (group && latestGroup) group.backgroundHistory = latestGroup.backgroundHistory;
+      if (group && (!group.enabled || state.bots[key]?.activeTaskId !== context.activeTaskId)) {
+        group.deliveries = Object.fromEntries(
+          Object.entries(group.deliveries ?? {}).map(([id, entry]) => [
+            id,
+            entry.status === "sent" ? entry : { ...entry, status: "invalidated" as const },
+          ]),
+        );
+      }
+      const taskIds =
+        group && context.activeTaskId
+          ? [...new Set([...group.taskIds, context.activeTaskId])]
+          : group?.taskIds;
+      state.bots[key] = {
+        ...context,
+        ...(!group
+          ? {
+              privateBindingId:
+                latest?.activeTaskId === context.activeTaskId &&
+                getWorkspaceKey(latest.workspacePath, latest.workspaceIdentity) ===
+                  getWorkspaceKey(context.workspacePath, context.workspaceIdentity)
+                  ? (latest.privateBindingId ?? randomUUID())
+                  : randomUUID(),
+            }
+          : {}),
+        ...(group
+          ? {
+              group: {
+                ...group,
+                taskIds: taskIds!,
+                taskWorkspaces: {
+                  ...group.taskWorkspaces,
+                  ...(context.activeTaskId
+                    ? {
+                        [context.activeTaskId]: {
+                          workspacePath: context.workspacePath,
+                          workspaceIdentity: context.workspaceIdentity,
+                        },
+                      }
+                    : {}),
+                },
               },
-            };
-          }
+            }
+          : {}),
+        updatedAt: Date.now(),
+      };
+      if (updateAuthorization && group && !group.threadId) {
+        // 群授权是单一权威；停用或换绑必须在同一次写入中使所有话题卡片失效。
+        for (const [topicKey, topic] of Object.entries(state.bots)) {
+          if (
+            topic.botId !== context.botId ||
+            topic.group?.chatId !== group.chatId ||
+            !topic.group.threadId
+          )
+            continue;
+          stopGroupSynchronization(topic);
+          state.bots[topicKey] = {
+            ...topic,
+            group: {
+              ...topic.group,
+              enabled: group.enabled,
+              ownerId: group.ownerId,
+              authorizationId: group.authorizationId,
+              deliveries: Object.fromEntries(
+                Object.entries(topic.group.deliveries ?? {}).map(([id, result]) => [
+                  id,
+                  result.status === "sent" ? result : { ...result, status: "invalidated" as const },
+                ]),
+              ),
+            },
+          };
         }
-        await repo.writeState(state);
-      });
-    stateWriteTail = next;
+      }
+      await repo.writeState(state);
+    });
     await next;
     if (!context.group) {
       context.privateBindingId = (await repo.readState()).bots[context.botId]?.privateBindingId;
@@ -2936,31 +2947,28 @@ export function createBotsService(
       read: async (id) => (await repo.readState()).bots[key]?.group?.deliveries?.[id],
       authorized,
       write: async (result) => {
-        const operation = stateWriteTail
-          .catch(() => undefined)
-          .then(async () => {
-            const state = await repo.readState();
-            const context = state.bots[key];
-            if (!context?.group) return;
-            const invalidated =
-              !context.group.enabled ||
-              context.activeTaskId !== result.taskId ||
-              (Boolean(result.authorizationId) &&
-                context.group.authorizationId !== result.authorizationId) ||
-              context.group.deliveries?.[result.id]?.status === "invalidated";
-            state.bots[key] = {
-              ...context,
-              group: {
-                ...context.group,
-                deliveries: {
-                  ...context.group.deliveries,
-                  [result.id]: invalidated ? { ...result, status: "invalidated" } : result,
-                },
+        const operation = serializeStateWrite(async () => {
+          const state = await repo.readState();
+          const context = state.bots[key];
+          if (!context?.group) return;
+          const invalidated =
+            !context.group.enabled ||
+            context.activeTaskId !== result.taskId ||
+            (Boolean(result.authorizationId) &&
+              context.group.authorizationId !== result.authorizationId) ||
+            context.group.deliveries?.[result.id]?.status === "invalidated";
+          state.bots[key] = {
+            ...context,
+            group: {
+              ...context.group,
+              deliveries: {
+                ...context.group.deliveries,
+                [result.id]: invalidated ? { ...result, status: "invalidated" } : result,
               },
-            };
-            await repo.writeState(state);
-          });
-        stateWriteTail = operation;
+            },
+          };
+          await repo.writeState(state);
+        });
         await operation;
         await deps.broadcastService
           ?.send({ channel: "bots:group-state", payload: { botId: bot.id, chatId } })
@@ -3684,7 +3692,7 @@ export function createBotsService(
     return latestTask;
   }
 
-  async function processProviderCallback(
+  async function processProviderCallbackUnchecked(
     provider: BotProvider,
     payload: unknown,
   ): Promise<BotProviderCallbackResult> {
@@ -3903,7 +3911,7 @@ export function createBotsService(
             },
           });
         } else {
-          outbound = await service.handleInboundMessage(inboundMessage);
+          outbound = await handleAcceptedInboundMessage(inboundMessage);
         }
       } catch (error) {
         releaseInboundDelivery(inboundMessage);
@@ -5942,9 +5950,13 @@ export function createBotsService(
     ): Promise<void> => {
       const shouldBroadcast = !forwardedTaskEvents.has(event);
       forwardedTaskEvents.add(event);
-      const nextStreamEvent = streamEventQueue.then(() =>
-        handleStreamEvent(event, shouldBroadcast),
-      );
+      // 终态会先清runningTasks再等持久化/回推；整条队列结算前不能报告迁移idle。
+      pendingStreamEvents += 1;
+      const nextStreamEvent = streamEventQueue
+        .then(() => handleStreamEvent(event, shouldBroadcast))
+        .finally(() => {
+          pendingStreamEvents -= 1;
+        });
       // Bugfix: ZCode Agent 事件分发不保证等待 async listener。微信这类离散消息如果并发发送，
       // task_complete 的 Change summary 可能抢在前面正文 flush 之前到达客户端，所以这里按任务串行消费。
       streamEventQueue = nextStreamEvent.catch((error: unknown) => {
@@ -9807,6 +9819,49 @@ export function createBotsService(
     async handleProviderCallbackResponse(provider: BotProvider, payload: unknown) {
       return processProviderCallback(provider, payload);
     },
+    async reserveForDataDirectoryMigration() {
+      // 先封闭所有Provider入站，再检查已接收的异步材料/队列；失败不能清空它们来伪造idle。
+      migrationSealed = true;
+      if (privateRecoveryTimer) clearInterval(privateRecoveryTimer);
+      privateRecoveryTimer = undefined;
+      const assertIdle = () => {
+        if (
+          shutdownPromise ||
+          activeInboundCalls > 0 ||
+          pendingStateWrites > 0 ||
+          pendingStreamEvents > 0 ||
+          startupPending ||
+          inboundProcessingQueuesByContext.size > 0 ||
+          runningTasks.size > 0 ||
+          topicPreparation.hasPending() ||
+          topicStops.size > 0 ||
+          [...topicContinuations.values()].some((continuation) => continuation.hasPending()) ||
+          [...topicReplies.values()].some((replies) => replies.size > 0) ||
+          privateReconciliations.size > 0 ||
+          watchStarts.size > 0 ||
+          privateRecoveryPending ||
+          streamingCardRequestControllers.size > 0 ||
+          pendingRemoteReconnectsByKey.size > 0 ||
+          [...failedPrivateDeliveries.values()].some((delivery) => delivery.sending)
+        )
+          throw new Error(
+            "DATA_DIRECTORY_BUSY: Bot messages or background persistence are still pending",
+          );
+      };
+      assertIdle();
+      const config = await repo.readConfig();
+      if (config.bots.some((bot) => bot.enabled)) {
+        throw new Error(
+          "DATA_DIRECTORY_BUSY: Stop all enabled Bots before migrating the data directory",
+        );
+      }
+      assertIdle();
+    },
+    cancelDataDirectoryMigration() {
+      if (!migrationSealed || shutdownPromise) return;
+      migrationSealed = false;
+      startPrivateRecovery();
+    },
     disposeAll() {
       void service.disposeAllAndWait().catch((error: unknown) => {
         botsLogger.warn(
@@ -9815,7 +9870,7 @@ export function createBotsService(
         );
       });
     },
-    disposeAllAndWait() {
+    disposeAllAndWait(options) {
       if (shutdownPromise) {
         return shutdownPromise;
       }
@@ -9878,17 +9933,43 @@ export function createBotsService(
       // 只执行一次，并在返回前等三类 Provider runtime 的请求、WebSocket 和跨进程锁全部收口。
       shutdownPromise = Promise.allSettled([
         cancelUploads,
-        telegramRuntime.dispose(),
-        weixinRuntime.dispose(),
-        feishuRuntime.dispose(),
-      ]).then(() => undefined);
+        telegramRuntime.dispose(options),
+        weixinRuntime.dispose(options),
+        feishuRuntime.dispose(options),
+      ]).then((results) => {
+        const failures = results.flatMap((result) =>
+          result.status === "rejected" ? [result.reason] : [],
+        );
+        if (options?.strict && failures.length)
+          throw new AggregateError(failures, "Bot resource close failed during data migration");
+      });
       return shutdownPromise;
     },
   };
-  if (runStartupBackgroundTasks) {
+  function gateInbound<Args extends unknown[], Result>(
+    handler: (...args: Args) => Promise<Result>,
+  ) {
+    return async (...args: Args): Promise<Result> => {
+      if (migrationSealed) throw new Error("DATA_DIRECTORY_MAINTENANCE: Bot admission is closed");
+      activeInboundCalls += 1;
+      try {
+        return await handler(...args);
+      } finally {
+        activeInboundCalls -= 1;
+      }
+    };
+  }
+  // 已通过Provider入口接收的消息继续处理，不能在内部转交时被后来的reserve撤回。
+  handleAcceptedInboundMessage = service.handleInboundMessage;
+  service.handleInboundMessage = gateInbound(service.handleInboundMessage);
+  service.handleProviderCallback = gateInbound(service.handleProviderCallback);
+  service.handleProviderCallbackResponse = gateInbound(service.handleProviderCallbackResponse);
+  function startPrivateRecovery(): void {
+    if (!runStartupBackgroundTasks || privateRecoveryTimer || shutdownPromise || migrationSealed)
+      return;
     // 远端连接没有 Bot 专属事件源；只检查已存在的连接，不建立额外连接或重放历史。
     privateRecoveryTimer = setInterval(() => {
-      if (shutdownPromise || privateRecoveryPending) return;
+      if (shutdownPromise || migrationSealed || privateRecoveryPending) return;
       privateRecoveryPending = true;
       void repo
         .readState()
@@ -9902,10 +9983,10 @@ export function createBotsService(
         });
     }, 10_000);
     privateRecoveryTimer.unref();
-    void telegramRuntime.refresh();
-    void weixinRuntime.refresh();
-    void feishuRuntime.refresh();
-    void ensureBotStorageMigrated()
+  }
+  if (runStartupBackgroundTasks) {
+    startPrivateRecovery();
+    const initializeStorage = ensureBotStorageMigrated()
       .then(async () => {
         for (const context of Object.values((await repo.readState()).bots)) {
           await restoreGroupSynchronization(context);
@@ -9919,6 +10000,14 @@ export function createBotsService(
           `Bot storage initialization failed: ${error instanceof Error ? error.message : String(error)}`,
         );
       });
+    void Promise.allSettled([
+      telegramRuntime.refresh(),
+      weixinRuntime.refresh(),
+      feishuRuntime.refresh(),
+      initializeStorage,
+    ]).then(() => {
+      startupPending = false;
+    });
   }
   return service;
 }

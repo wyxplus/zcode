@@ -1,12 +1,7 @@
+import { getUnifiedDataRoot } from "@zcode/shared/data-directory";
 // File Config Adapter - Load and patch JSON configuration files
 
-import {
-  existsSync,
-  readFileSync,
-  renameSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
@@ -78,7 +73,11 @@ export function loadFileConfig(filePath?: string, options: FileConfigOptions = {
   const resolvedPath = filePath
     ? resolvePath(filePath)
     : join(
-        resolvePath(options.baseDir ?? DEFAULT_BASE_DIR),
+        options.baseDir
+          ? resolvePath(options.baseDir)
+          : getUnifiedDataRoot()
+            ? join(getUnifiedDataRoot()!, "cli")
+            : resolvePath(DEFAULT_BASE_DIR),
         options.configFileName ?? DEFAULT_CONFIG_FILE,
       );
 
@@ -162,10 +161,7 @@ function migratePluginConfigInFile(value: unknown): Record<string, unknown> | un
   return changed ? { ...value, plugins: nextPlugins } : undefined;
 }
 
-function persistPluginConfigMigration(
-  filePath: string,
-  value: Record<string, unknown>,
-): void {
+function persistPluginConfigMigration(filePath: string, value: Record<string, unknown>): void {
   const tempPath = `${filePath}.migrate.${process.pid}.${Date.now()}.tmp`;
   try {
     writeFileSync(tempPath, `${JSON.stringify(value, null, 2)}\n`, {
@@ -441,7 +437,10 @@ export async function removeSuppressedBuiltinInFileConfig(
  * Get default config file path
  */
 export function getDefaultConfigPath(): string {
-  return join(resolvePath(DEFAULT_BASE_DIR), DEFAULT_CONFIG_FILE);
+  return join(
+    getUnifiedDataRoot() ? join(getUnifiedDataRoot()!, "cli") : resolvePath(DEFAULT_BASE_DIR),
+    DEFAULT_CONFIG_FILE,
+  );
 }
 
 /**

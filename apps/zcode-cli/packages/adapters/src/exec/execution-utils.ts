@@ -1,3 +1,4 @@
+import { getUnifiedDataRoot } from "@zcode/shared/data-directory";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ExecutionRequest } from "@zcode/contracts";
@@ -16,7 +17,8 @@ export const DEFAULT_PROGRESS_INTERVAL_MS = 1_000;
 export const DEFAULT_PROGRESS_TAIL_BYTES = 4 * 1024;
 
 export function resolveDefaultOutputRootDir(processEnv: NodeJS.ProcessEnv = process.env): string {
-  const storageRoot = processEnv.ZCODE_STORAGE_DIR?.trim() || join(homedir(), ".zcode");
+  const storageRoot =
+    processEnv.ZCODE_STORAGE_DIR?.trim() || getUnifiedDataRoot() || join(homedir(), ".zcode");
   return join(storageRoot, "cli", "exec");
 }
 

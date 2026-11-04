@@ -1,3 +1,4 @@
+import { resolveManagedDataRoot } from "@zcode/shared/data-directory";
 import { IGenUiService } from "./gen-ui/contract.js";
 import { createGenUiService } from "./gen-ui/node.js";
 import { channelReplyHostRequestSchema, channelReplyResultSchema } from "@zcode/shared";
@@ -90,7 +91,6 @@ export {
   getFeedbackAttachmentDir,
   getFeedbackLogArchiveDir,
   getGitCheckpointIndexRootDir,
-  copyDataDirectory,
   validateDataBaseDirTarget,
   ZCODE_WINDOWS_APP_INSTALL_DIR_ENV,
 } from "./paths.js";
@@ -588,7 +588,7 @@ interface ServiceWithDisposeAll {
 }
 
 interface ServiceWithDisposeAllAndWait {
-  disposeAllAndWait: () => Promise<void>;
+  disposeAllAndWait: (options?: { strict?: boolean }) => Promise<void>;
 }
 
 // Bug A: the Helper's first cold launch (large Node SEA + first-time Gatekeeper/notarization
@@ -643,7 +643,10 @@ const providerProvisioningTriggerDisposers = new WeakMap<
 // dispose 链必须统一关闭：Windows 上句柄悬着会让宿主回收后临时目录 rm 撞 EBUSY
 // （stdioDesktopPresentationSurface 单测稳定复现），Linux 的 unlink-while-open 语义掩盖了泄漏。
 // 与其它侧表一样按 ServiceCollection 登记并在 dispose 时统一 close。
-const sharedSqliteRepos = new WeakMap<ServiceCollection, ReadonlyArray<{ close(): void }>>();
+const sharedSqliteRepos = new WeakMap<
+  ServiceCollection,
+  ReadonlyArray<{ close(options?: { throwOnError?: boolean }): void }>
+>();
 const accountRequestAuthServices = new WeakMap<ServiceCollection, IAccountRequestAuthService>();
 export type OffPeakRequestAuthBuilder = (
   ticketId: string,
@@ -1068,7 +1071,7 @@ export { isOfficialCuaPluginEnabledForWorkspace };
 
 export function hasGlobalCliZCodeCuaServer(env: NodeJS.ProcessEnv = process.env): boolean {
   const home = env.HOME?.trim() || homedir();
-  const configPath = join(home, ".zcode", "cli", "config.json");
+  const configPath = join(resolveManagedDataRoot(home), "cli", "config.json");
   let parsed: unknown;
   try {
     parsed = JSON.parse(readFileSync(configPath, "utf8"));
@@ -2359,7 +2362,7 @@ export function createLocalServices(options: {
       });
   // 注册链上的懒工厂（如 OffPeak）会各自创建 tasks-index sqlite repo；先收集到本数组，
   // services 集合建好后在 return 前统一登记进 sharedSqliteRepos 侧表
-  const sqliteReposToClose: Array<{ close(): void }> = [];
+  const sqliteReposToClose: Array<{ close(options?: { throwOnError?: boolean }): void }> = [];
   const marketingAssets = createMarketingAssetRegistry({
     allowLoopback: ZCODE_ENV === "test" || process.env.NODE_ENV === "development",
   });
@@ -2821,7 +2824,10 @@ export function disposeServiceResources(services: ServiceCollection): void {
   managedHostApiNetworkTransports.get(services)?.dispose();
 }
 
-export async function disposeServiceResourcesAndWait(services: ServiceCollection): Promise<void> {
+export async function disposeServiceResourcesAndWait(
+  services: ServiceCollection,
+  options?: { strict?: boolean },
+): Promise<void> {
   (
     services.getOptional(IGenUiService) as (IGenUiService & { dispose?(): void }) | undefined
   )?.dispose?.();
@@ -2841,7 +2847,7 @@ export async function disposeServiceResourcesAndWait(services: ServiceCollection
 
   for (const service of disposableServices) {
     if (hasDisposeAllAndWait(service)) {
-      await service.disposeAllAndWait();
+      await service.disposeAllAndWait(options);
     } else if (hasDisposeAll(service)) {
       service.disposeAll();
     }
@@ -2851,18 +2857,25 @@ export async function disposeServiceResourcesAndWait(services: ServiceCollection
   // 收口它，不能只靠 launcher-pid watchdog / 进程退出兜底。
   const managedCuaHelperHost = managedCuaHelperHosts.get(services);
   if (managedCuaHelperHost) {
-    await managedCuaHelperHost.stop().catch(() => {});
+    if (options?.strict) await managedCuaHelperHost.stop();
+    else await managedCuaHelperHost.stop().catch(() => {});
   }
   // 关闭共享 tasks-index sqlite 句柄（同 disposeServiceResources，异步收口路径也要释放）
-  for (const repo of sharedSqliteRepos.get(services) ?? []) repo.close();
+  // 搬盘的 clean-close 必须证明写句柄成功关闭，不能沿用普通退出的吞错策略。
+  for (const repo of sharedSqliteRepos.get(services) ?? [])
+    repo.close({ throwOnError: options?.strict });
   sharedSqliteRepos.delete(services);
   providerRuntimes.get(services)?.dispose();
   for (const dispose of providerProvisioningTriggerDisposers.get(services) ?? []) dispose();
   providerProvisioningTriggerDisposers.delete(services);
   providerProvisioningSources.delete(services);
-  await managedHostApiNetworkTransports
-    .get(services)
-    ?.disposeAndWait()
-    .catch(() => {});
+  const transport = managedHostApiNetworkTransports.get(services);
+  if (options?.strict) await transport?.disposeAndWait();
+  else await transport?.disposeAndWait().catch(() => {});
 }
 export { localRuntimeNetworkCapture } from "./zcode-agent/localRuntimeNetworkCapture.js";
+export {
+  reserveDataDirectoryMigration,
+  cancelDataDirectoryMigration,
+  prepareForDataDirectoryMigration,
+} from "./serviceDataDirectoryMaintenance.js";

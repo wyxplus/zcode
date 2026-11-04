@@ -1,6 +1,7 @@
+import { getUnifiedDataRoot } from "@zcode/shared/data-directory";
 // Config Factory - Load and merge all config sources
 
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import type {
   ConfigPort,
   HookConfigSource,
@@ -25,6 +26,7 @@ import { loadFileConfig, getDefaultConfigPath, type LoadedConfig } from "./file-
 import { parseEnvConfig } from "./env-config.adapter.js";
 import { mergeConfigs, createPrioritizedConfig } from "./config-merger.js";
 import { createNodeLoggerFactory } from "../logging/index.js";
+import { assertUnifiedStorageConfig } from "./unified-data-directory.js";
 import {
   loadProjectConfigFile,
   loadProjectConfigs,
@@ -129,7 +131,18 @@ export interface PluginConfigSources {
 export function createConfig(options: ConfigFactoryOptions = {}): ConfigResult {
   // 1. System defaults
   const configs: ReturnType<typeof createPrioritizedConfig>[] = [
-    createPrioritizedConfig(DefaultRuntimeConfig, ConfigScope.System),
+    createPrioritizedConfig(
+      getUnifiedDataRoot()
+        ? {
+            ...DefaultRuntimeConfig,
+            storage: {
+              dir: getUnifiedDataRoot()!,
+              sessionDbPath: join(getUnifiedDataRoot()!, "cli", "db", "db.sqlite"),
+            },
+          }
+        : DefaultRuntimeConfig,
+      ConfigScope.System,
+    ),
   ];
 
   // 2. User config file
@@ -230,6 +243,7 @@ export function createConfig(options: ConfigFactoryOptions = {}): ConfigResult {
   // Project Hook events stay outside this executable merge. The snapshot above is the only
   // Phase 1 side-channel and cannot be consumed by configured-runner.
   const merged = mergeConfigs(...configs);
+  assertUnifiedStorageConfig(merged);
   const pluginConfigSources = resolvePluginConfigSources({
     projectConfig: projectConfigResult.config,
     projectPath: projectConfigResult.path,

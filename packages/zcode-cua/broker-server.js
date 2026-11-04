@@ -89,7 +89,10 @@ export class CuaHelperLifecycleManager {
   }
   async dispose(managed) {
     this.#disposed = true;
-    await this.#dispose?.(managed ?? this.#current);
+    const resource = managed ?? this.#current;
+    // 不可用构建通常从未 acquire；空资源不能传给只接受 Managed 的停止回调。
+    if (resource === undefined) return;
+    await this.#dispose?.(resource);
   }
 }
 

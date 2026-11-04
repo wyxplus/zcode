@@ -25,11 +25,13 @@ interface HostInitLike {
 }
 
 const DEFAULT_SEEN_EVENT_LIMIT = 1000;
+type HostSessionRealtimePort = SessionRealtimePort & { hasPendingIncomingOwnerCommands(): boolean };
 
 export function createTaskRealtimeBridgeForHostInit(
   message: HostInitLike,
   parentPort: ParentPortLike,
-): SessionRealtimePort | null {
+  options: { acceptOwnerCommand?: () => boolean } = {},
+): HostSessionRealtimePort | null {
   if (message.type !== HostMessageTypes.InitLocal) {
     return null;
   }
@@ -41,6 +43,7 @@ export function createTaskRealtimeBridgeForHostInit(
     hostId: message.hostId,
     deliveryKind: message.deliveryKind,
     parentPort,
+    acceptOwnerCommand: options.acceptOwnerCommand,
   });
 }
 
@@ -49,9 +52,11 @@ export function createTaskRealtimeBridge(params: {
   deliveryKind?: TaskRealtimeHostDeliveryKind;
   parentPort: ParentPortLike;
   seenEventLimit?: number;
-}): SessionRealtimePort {
+  acceptOwnerCommand?: () => boolean;
+}): HostSessionRealtimePort {
   const listeners = new Set<(event: TaskRealtimeDeliveredEvent) => void>();
   const ownerCommandListeners = new Set<(command: TaskOwnerCommandDelivery) => void>();
+  const incomingOwnerCommandIds = new Set<string>();
   const pendingLeaseRequests = new Map<
     string,
     {
@@ -120,6 +125,20 @@ export function createTaskRealtimeBridge(params: {
     }
 
     if (parsed.data.type === HostMessageTypes.TaskOwnerCommandDeliver) {
+      if (params.acceptOwnerCommand?.() === false) {
+        params.parentPort.postMessage({
+          type: HostResponseTypes.TaskOwnerCommandResult,
+          result: {
+            commandRequestId: parsed.data.command.commandRequestId,
+            success: false,
+            code: "OWNER_COMMAND_FAILED",
+            error: "ZCode data directory migration is in progress",
+          },
+        });
+        return;
+      }
+      // 已投递给 owner 的异步命令直到真实回执才算完成，不能根据 running 投影猜停写。
+      incomingOwnerCommandIds.add(parsed.data.command.commandRequestId);
       for (const listener of ownerCommandListeners) {
         listener(parsed.data.command);
       }
@@ -145,6 +164,7 @@ export function createTaskRealtimeBridge(params: {
   params.parentPort.on("message", onMessage);
 
   return {
+    hasPendingIncomingOwnerCommands: () => incomingOwnerCommandIds.size > 0,
     hostId: params.hostId,
     deliveryKind: params.deliveryKind ?? "desktop_window",
     publish(event: TaskRealtimeEvent): void {
@@ -230,6 +250,7 @@ export function createTaskRealtimeBridge(params: {
       };
     },
     publishOwnerCommandResult(result): void {
+      incomingOwnerCommandIds.delete(result.commandRequestId);
       if (disposed) {
         return;
       }
@@ -254,6 +275,7 @@ export function createTaskRealtimeBridge(params: {
       pendingOwnerCommands.clear();
       listeners.clear();
       ownerCommandListeners.clear();
+      incomingOwnerCommandIds.clear();
       seenEventIds.clear();
       seenEventOrder.length = 0;
       params.parentPort.off("message", onMessage);

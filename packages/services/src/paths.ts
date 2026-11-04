@@ -1,8 +1,7 @@
 /* path 规则集中维护：旧 task 快照与 provider 配置路径仍在这里收口。 */
-import { lstatSync } from "node:fs";
-import { cp } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { basename, join, win32 } from "node:path";
+import { dirname, join, win32 } from "node:path";
+import { getUnifiedDataRoot } from "@zcode/shared/data-directory";
 import { homedir } from "node:os";
 import {
   DATA_BASE_DIR_FORBIDDEN_WINDOWS_INSTALL_DIR_ERROR_CODE,
@@ -28,13 +27,15 @@ export type DataBaseDirTargetValidationResult =
       forbiddenDir: string;
     };
 
-/** Set the base directory for app data (replaces homedir() prefix). */
+/** 设置旧布局的 App base；统一迁移提交后由活动根决定路径。 */
 export function setDataBaseDir(dir: string | null): void {
   _dataBaseDir = dir?.trim() || null;
 }
 
-/** Get the current base directory. Priority: setDataBaseDir() > env ZCODE_DATA_BASE_DIR > homedir(). */
+/** 优先读取已初始化的统一根；无 locator 时保留 set/env/home 旧布局。 */
 export function getDataBaseDir(): string {
+  const unifiedRoot = getUnifiedDataRoot();
+  if (unifiedRoot) return dirname(unifiedRoot);
   if (_dataBaseDir) return _dataBaseDir;
   if (envDataBaseDir) return envDataBaseDir;
   // 服务实例会启动后台刷新任务；若每次调用都动态读取 HOME，
@@ -44,7 +45,7 @@ export function getDataBaseDir(): string {
 
 /** {dataBaseDir}/.zcode */
 export function getZCodeDataRootDir(): string {
-  return join(getDataBaseDir(), ".zcode");
+  return getUnifiedDataRoot() ?? join(getDataBaseDir(), ".zcode");
 }
 
 /** 非项目对话共享的真实工作目录；默认 ~/.zcode/workspace/default。 */
@@ -235,35 +236,4 @@ export function getProviderWorkspaceConfigDir(): string {
   return ZCODE_AGENT_RUNTIME.nativeConfigDir
     ? join(getDataBaseDir(), ZCODE_AGENT_RUNTIME.nativeConfigDir)
     : join(getDataBaseDir(), ".zcode", "cli");
-}
-
-/**
- * Copy the .zcode/v2 data directory from one base dir to another.
- * Excludes setting.json and its transient atomic-write siblings — bootstrap
- * state must only live at the default homedir location.
- */
-export async function copyDataDirectory(oldBaseDir: string, newBaseDir: string): Promise<void> {
-  const oldDir = join(oldBaseDir, ".zcode", "v2");
-  const newDir = join(newBaseDir, ".zcode", "v2");
-  await cp(oldDir, newDir, {
-    recursive: true,
-    force: false,
-    filter: (source) => {
-      const sourceName = basename(source);
-      if (sourceName === "setting.json" || sourceName.startsWith("setting.json.")) {
-        // setting.json.lock 和 setting.json.*.tmp 由原子写入短暂创建/删除，
-        // 复制过程中扫描到已消失的 lock 会触发 ENOENT，并让数据目录迁移失败。
-        // 这些文件都属于 bootstrap 写入中间态，不能迁移到新数据根。
-        return false;
-      }
-      // Windows 非提权环境下 fs.cp 无法复制符号链接（EPERM）。
-      // 跳过符号链接可避免 Windows 非提权环境下 fs.cp 报 EPERM。
-      try {
-        if (lstatSync(source).isSymbolicLink()) return false;
-      } catch {
-        // lstat 失败时放行，让 cp 自行处理
-      }
-      return true;
-    },
-  });
 }

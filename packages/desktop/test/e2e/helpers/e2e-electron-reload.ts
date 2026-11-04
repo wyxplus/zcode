@@ -4,6 +4,8 @@ import { buildWindowsTaskkillArgs, listE2EProcessTreePids } from "./e2e-process-
 import { reloadE2EElectronServiceBridge } from "./e2e-electron-service-lifecycle.js";
 
 export interface E2EElectronProcessExitOptions {
+  /** 仅供已确认严格关库/flush 的维护 fixture；捕获旧进程树后主动结束 Main。 */
+  requestPreparedAppExit?: () => Promise<void>;
   afterElectronProcessExit?: () => Promise<void> | void;
   cleanupTimedOutProcessTreePids?: (pids: number[]) => Promise<void> | void;
   collectProcessTreePids?: (rootPids?: number[]) => number[];
@@ -79,11 +81,12 @@ export async function reloadElectronSessionSafely(
   pendingExitBarrierByBrowser.set(browser, pendingBarrier);
 
   try {
+    await options.requestPreparedAppExit?.();
     try {
       await browser.deleteSession({ shutdownDriver: false });
     } catch (error) {
       if (pendingBarrier.error) {
-        throw new Error("Electron reload 旧进程退出屏障失败", {
+        throw new Error(`Electron reload 旧进程退出屏障失败: ${String(pendingBarrier.error)}`, {
           cause: pendingBarrier.error,
         });
       }
@@ -93,7 +96,9 @@ export async function reloadElectronSessionSafely(
       throw new Error("Electron reload 未经过旧进程退出屏障");
     }
     if (pendingBarrier.error) {
-      throw new Error("Electron reload 旧进程退出屏障失败", { cause: pendingBarrier.error });
+      throw new Error(`Electron reload 旧进程退出屏障失败: ${String(pendingBarrier.error)}`, {
+        cause: pendingBarrier.error,
+      });
     }
 
     // Bug 根因：运行中的 Host 会异步刷新并写回 provider/config 数据；测试若在旧进程

@@ -1,3 +1,4 @@
+import { getUnifiedDataRoot } from "@zcode/shared/data-directory";
 import { existsSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -7,10 +8,7 @@ import { createZCodeCredentialCipher, type ZCodeCredentialCipher } from "./crede
 
 const ZCODE_DATA_BASE_DIR_ENV_KEY = "ZCODE_DATA_BASE_DIR";
 const ZAI_PROVIDER_ID = "zai";
-const credentialChangeListeners = new Map<
-  string,
-  Set<() => void | Promise<void>>
->();
+const credentialChangeListeners = new Map<string, Set<() => void | Promise<void>>>();
 
 export const SHARED_ZCODE_CREDENTIAL_KEYS = {
   activeProvider: "oauth:active_provider",
@@ -285,6 +283,8 @@ export function resolveSharedZCodeCredentialsPath(
   }
 
   const env = options.env ?? process.env;
+  if (!options.baseDir && getUnifiedDataRoot())
+    return join(getUnifiedDataRoot()!, "v2", "credentials.json");
   const baseDir = options.baseDir ?? env[ZCODE_DATA_BASE_DIR_ENV_KEY] ?? homedir();
   return join(resolveUserPath(baseDir), ".zcode", "v2", "credentials.json");
 }

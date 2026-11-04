@@ -1,3 +1,5 @@
+import { getUnifiedDataRoot } from "@zcode/shared/data-directory";
+import { ensureAppDataDirectoryLease } from "./data-directory-lifecycle.js";
 import { subagentProfilesFromSnapshot } from "../subagent-runtime-config.js";
 import { isAbsolute, join, resolve } from "node:path";
 import {
@@ -159,6 +161,12 @@ function decodePromptAttachmentDataUrl(
 }
 
 export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp> {
+  if (!options?.providerRegistry) throw new Error("createZCodeApp requires a Provider Registry");
+  await ensureAppDataDirectoryLease(options.env);
+  return createZCodeAppInternal(options);
+}
+
+async function createZCodeAppInternal(options: ZCodeAppOptions): Promise<ZCodeApp> {
   if (!options?.providerRegistry) {
     throw new Error("createZCodeApp requires a Provider Registry");
   }
@@ -389,7 +397,10 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
       (messageEnabled
         ? createNodeSessionMailboxAdapter({
             rootDir: resolvePath(
-              (options.env ?? process.env).ZCODE_MAILBOX_ROOT ?? "~/.zcode/mailbox",
+              (options.env ?? process.env).ZCODE_MAILBOX_ROOT ??
+                (getUnifiedDataRoot()
+                  ? join(getUnifiedDataRoot()!, "mailbox")
+                  : "~/.zcode/mailbox"),
             ),
           })
         : undefined);
@@ -992,6 +1003,17 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
     });
 
     const closeSession = sessionFacade.close;
+    const closeApplication = async (closeOptions?: { strict?: boolean }) => {
+      try {
+        await closeSession?.(closeOptions);
+      } finally {
+        try {
+          providerModelRuntime?.dispose();
+        } finally {
+          await modelTelemetry.shutdown();
+        }
+      }
+    };
     const resolvePromptAttachment = async (input: {
       ref: string;
       mime: string;
@@ -1216,16 +1238,11 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
         return { kind: "chunked" };
       },
       ...sessionFacade,
-      close: async () => {
-        try {
-          await closeSession?.();
-        } finally {
-          try {
-            providerModelRuntime?.dispose();
-          } finally {
-            await modelTelemetry.shutdown();
-          }
-        }
+      close: closeApplication,
+      prepareForDataDirectoryMigration: async () => {
+        if (runtime.hasResidencyBlockingWork())
+          throw new Error("Session has active or queued work");
+        await closeApplication({ strict: true });
       },
       ...workflowFacade,
       ...scriptWorkflowFacade,

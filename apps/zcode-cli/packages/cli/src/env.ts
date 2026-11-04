@@ -1,4 +1,5 @@
 import { existsSync, statSync } from "node:fs";
+import { getUnifiedDataRoot } from "@zcode/shared/data-directory";
 import { homedir } from "node:os";
 import { dirname, join, parse, resolve } from "node:path";
 import { config as loadDotenv } from "dotenv";
@@ -131,6 +132,7 @@ function resolveCliRuntimeEnv(env: CliEnv, argv: readonly string[]): ZCodeRuntim
 }
 
 function applyBetaStorageDefault(env: CliEnv, argv: readonly string[]): void {
+  if (getUnifiedDataRoot()) return;
   if (env.ZCODE_STORAGE_DIR?.trim()) return;
   const explicitBeta = env.ZCODE_BETA === "1" || env.ZCODE_ENV === "beta";
   const invokedAsBeta = argv.some((arg) => /(^|[/\\])zcode-beta(?:$|\.)/u.test(arg));

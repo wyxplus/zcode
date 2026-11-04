@@ -45,6 +45,7 @@ export function createFeishuChannelRuntime(deps: FeishuChannelRuntimeDeps) {
 
   const runtimes = new Map<string, RuntimeEntry>();
   const refreshQueue = createLatestRuntimeRefreshQueue();
+  const cleanupErrors: unknown[] = [];
 
   async function getConnectionFingerprint(bot: BotConfig): Promise<string> {
     const credential = bot.credentialRef
@@ -168,6 +169,7 @@ export function createFeishuChannelRuntime(deps: FeishuChannelRuntimeDeps) {
           try {
             client.close();
           } catch (error) {
+            cleanupErrors.push(error);
             deps.logger.debug(
               undefined,
               `close Feishu WebSocket failed bot=${bot.id}: ${error instanceof Error ? error.message : String(error)}`,
@@ -176,6 +178,7 @@ export function createFeishuChannelRuntime(deps: FeishuChannelRuntimeDeps) {
           client = null;
         }
         await lock.release().catch((error: unknown) => {
+          cleanupErrors.push(error);
           deps.logger.warn(
             undefined,
             `release Feishu WebSocket lock failed bot=${bot.id}: ${error instanceof Error ? error.message : String(error)}`,
@@ -323,18 +326,28 @@ export function createFeishuChannelRuntime(deps: FeishuChannelRuntimeDeps) {
     });
   }
 
-  async function dispose(): Promise<void> {
+  async function dispose(options?: { strict?: boolean }): Promise<void> {
     refreshQueue.invalidate();
+    // 失效代次只阻止后续重建；迁移还必须等已开始的配置刷新和锁清理真实结束。
+    if (options?.strict) await refreshQueue.settled();
     const activeRuntimes = [...runtimes.values()];
     for (const runtime of activeRuntimes) {
       runtime.controller.abort();
     }
     // Bugfix：abort 只是发出取消信号；销毁终态必须等 WebSocket 关闭和 finally 释放跨进程锁。
-    await Promise.allSettled(activeRuntimes.map((runtime) => runtime.done));
+    const results = await Promise.allSettled(activeRuntimes.map((runtime) => runtime.done));
     for (const [botId, runtime] of runtimes) {
       if (activeRuntimes.includes(runtime)) {
         runtimes.delete(botId);
       }
+    }
+    if (options?.strict) {
+      // 普通退出保留best-effort；迁移不能把连接/锁关闭失败当成安全停写确认。
+      const failures = [
+        ...cleanupErrors,
+        ...results.flatMap((result) => (result.status === "rejected" ? [result.reason] : [])),
+      ];
+      if (failures.length) throw new AggregateError(failures, "Bot provider resource close failed");
     }
   }
 

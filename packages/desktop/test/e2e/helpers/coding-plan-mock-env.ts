@@ -24,6 +24,8 @@ const CODING_PLAN_TEAM_SPEC_MARKERS = [
   // 抽取 spec 判定时必须保留该入口，否则单跑时 worker 会在业务断言前缺少 mock。
   "subagent-coding-plan-login-catalog-stale.test.ts",
   "conversation-session-model-provider-restart-recovery.test.ts",
+  // 数据目录冷迁移播种模拟登录态，必须复用本地账号控制面，不能把假 JWT 发给线上。
+  "conversation-session-configurable-data-directory.test.ts",
   "conversation-session-model-provider-settings-transition.test.ts",
   "conversation-session-model-provider-effective-selection.test.ts",
   "conversation-session-worker-effective-selection.test.ts",

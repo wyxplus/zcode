@@ -8,6 +8,21 @@ import type { ServiceDescriptor } from "./descriptors.js";
  */
 export class ServiceCollection {
   private readonly _services = new Map<string, unknown>();
+  private maintenance = false;
+  private activeCalls = 0;
+
+  /** 本机搬盘先封闭 admission，再检查在途调用；不能用 idle 投影替代写屏障。 */
+  beginDataDirectoryMaintenance(): void {
+    this.maintenance = true;
+    if (this.activeCalls > 0) {
+      throw new Error("DATA_DIRECTORY_BUSY: service requests are still in flight");
+    }
+  }
+
+  /** reserve 失败只恢复入口；已经接收的调用继续完成，不能以重启代替取消维护。 */
+  cancelDataDirectoryMaintenance(): void {
+    this.maintenance = false;
+  }
 
   register<T>(descriptor: ServiceDescriptor<T>, instance: T): this {
     this._services.set(descriptor.channelName, instance);
@@ -33,10 +48,22 @@ export class ServiceCollection {
   ): void {
     for (const [channelName, instance] of this._services) {
       const exposed = overrides.get(channelName) ?? instance;
-      server.registerChannel(
-        channelName,
-        ProxyChannel.fromService(exposed as Record<string, unknown>),
-      );
+      const channel = ProxyChannel.fromService<string>(exposed as Record<string, unknown>);
+      server.registerChannel(channelName, {
+        call: async (ctx, command, arg, cancellationToken) => {
+          if (this.maintenance) throw new Error("DATA_DIRECTORY_MAINTENANCE");
+          this.activeCalls += 1;
+          try {
+            return await channel.call(ctx, command, arg, cancellationToken);
+          } finally {
+            this.activeCalls -= 1;
+          }
+        },
+        listen: (ctx, event, arg) => {
+          if (this.maintenance) throw new Error("DATA_DIRECTORY_MAINTENANCE");
+          return channel.listen(ctx, event, arg);
+        },
+      });
     }
   }
 }

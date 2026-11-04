@@ -366,6 +366,7 @@ declare global {
       getDesktopSessionActivity?(): Promise<{
         runningAgentSessionCount: number;
       }>;
+      migrateDataDirectory(targetBaseDir: string): Promise<void>;
       /** 注册更新安装后的版本说明，返回 disposer */
       onPostUpdateReleaseNotes(
         callback: (payload: PostUpdateReleaseNotesPayload) => void,

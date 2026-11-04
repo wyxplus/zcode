@@ -1,3 +1,4 @@
+import { resolveManagedDataRoot } from "@zcode/shared/data-directory";
 import { access, readFile, mkdir, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -14,7 +15,6 @@ import {
 } from "@zcode/shared";
 import type { ISettingService } from "./setting.js";
 import { normalizeSettingsPatch } from "#src/setting/normalizeSettingsPatch.js";
-import { copyDataDirectory, getDataBaseDir, validateDataBaseDirTarget } from "../paths.js";
 import { isEffectiveDevelopmentNodeEnv } from "../runtime-tools/nodeEnv.js";
 import { maybeThrowInjectedFsFault } from "../fs/fsFaultInjection.js";
 import { atomicWriteText } from "../fs/atomicFileUtils.js";
@@ -53,7 +53,7 @@ function resolveUserHomeDir() {
 }
 
 function getSettingsDir() {
-  return join(resolveUserHomeDir(), ".zcode", "v2");
+  return join(resolveManagedDataRoot(resolveUserHomeDir()), "v2");
 }
 
 function getSettingsFile() {
@@ -300,6 +300,10 @@ export function createSettingServiceWithMigrations(): {
       const runUpdate = async (shouldCommit: () => boolean, enterCommitPhase: () => void) => {
         const validatedPatch = appSettingsPatchSchema.parse(normalizeSettingsPatch(patch));
         const current = await readSettings();
+        // 搬盘必须经过全应用停写与校验；普通设置 patch 不能绕过迁移直接改启动路径。
+        if (Object.hasOwn(patch, "dataBaseDir") && patch.dataBaseDir !== current.dataBaseDir) {
+          throw new Error("DATA_DIRECTORY_MIGRATION_REQUIRED");
+        }
         if (expectedAccountSettings) {
           // 账号查询期间用户可能已手动切换。必须在同一写队列内校验，不能靠调用方先读再写。
           const expected = appSettingsPatchSchema.parse(expectedAccountSettings);
@@ -336,25 +340,9 @@ export function createSettingServiceWithMigrations(): {
       await enqueueSettingsWrite(runUpdate);
     },
 
-    async updateDataBaseDir(newDir: string | undefined): Promise<void> {
-      const currentBaseDir = getDataBaseDir();
-      const targetBaseDir = newDir?.trim() || homedir();
-      const validation = validateDataBaseDirTarget(targetBaseDir);
-      if (!validation.ok) {
-        // Windows 安装目录由安装器/自动更新管理，把 .zcode/v2 放进去可能在升级时被覆盖。
-        // 迁移前在 service 层拦截，避免 UI 入口变化或 RPC 调用绕过前端判断。
-        const error = new Error(`${validation.code}: ${validation.forbiddenDir}`);
-        (error as Error & { code: string }).code = validation.code;
-        throw error;
-      }
-
-      if (currentBaseDir !== targetBaseDir) {
-        log("copying data directory from", currentBaseDir, "to", targetBaseDir);
-        await copyDataDirectory(currentBaseDir, targetBaseDir);
-        log("data directory copy done");
-      }
-
-      await this.update({ dataBaseDir: newDir });
+    async updateDataBaseDir(_newDir: string | undefined): Promise<void> {
+      // 兼容旧 RPC 客户端时明确拒绝，不能继续执行只复制 v2 的不完整搬迁。
+      throw new Error("DATA_DIRECTORY_MIGRATION_REQUIRED");
     },
 
     async ensureDefaultProject(userHomeDir: string): Promise<{ path: string; created: boolean }> {

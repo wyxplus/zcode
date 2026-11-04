@@ -1,7 +1,25 @@
 import { Buffer } from "node:buffer";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { setDataBaseDir } from "../src/paths.js";
 import { encodeCustomModelValue, type BotsStateFile, type ZCodeStreamEvent } from "@zcode/shared";
 import * as f from "./botsService.fixtures.js";
+
+let attachmentTestDirectory: string | undefined;
+afterEach(async () => {
+  setDataBaseDir(null);
+  if (attachmentTestDirectory) {
+    await rm(attachmentTestDirectory, { recursive: true, force: true });
+    attachmentTestDirectory = undefined;
+  }
+});
+async function useAttachmentTestDirectory(): Promise<void> {
+  // 路径在模块初始化时固定环境来源；测试必须用显式覆盖，不能再动态修改env误写真实HOME。
+  attachmentTestDirectory = await mkdtemp(join(tmpdir(), "zcode-bot-attachments-"));
+  setDataBaseDir(attachmentTestDirectory);
+}
 
 const actor = {
   provider: "webhook" as const,
@@ -3918,7 +3936,7 @@ describe("botsService messageFlow", () => {
   });
 
   it("creates a task from an attachment-only bot message with the default prompt", async () => {
-    vi.stubEnv("ZCODE_DATA_BASE_DIR", `/tmp/zcode-bot-attachments-${Date.now()}`);
+    await useAttachmentTestDirectory();
     const repo = f.createMemoryRepo(f.baseConfig);
     const legacyTaskService = f.createLegacyTaskService();
     const service = f.createBotsService({
@@ -3969,7 +3987,7 @@ describe("botsService messageFlow", () => {
   });
 
   it("adds unsupported bot files to the prompt as cached path context", async () => {
-    vi.stubEnv("ZCODE_DATA_BASE_DIR", `/tmp/zcode-bot-files-${Date.now()}`);
+    await useAttachmentTestDirectory();
     const repo = f.createMemoryRepo(f.baseConfig);
     const legacyTaskService = f.createLegacyTaskService();
     const service = f.createBotsService({

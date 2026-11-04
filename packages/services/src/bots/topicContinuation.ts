@@ -84,6 +84,9 @@ export function createTopicContinuation<T>(ports: TopicContinuationPorts<T>) {
   }
 
   return {
+    hasPending(): boolean {
+      return pending.length > 0 || draining !== undefined;
+    },
     receive(id: string, prepare: () => Promise<T>): boolean {
       if (seen.has(id)) return false;
       seen.add(id);

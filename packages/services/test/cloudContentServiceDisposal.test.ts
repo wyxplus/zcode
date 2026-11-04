@@ -46,4 +46,20 @@ describe("cloud content host disposal", () => {
     await Promise.resolve();
     expect(disposeAllAndWait).toHaveBeenCalledTimes(1);
   });
+
+  it("forwards strict migration shutdown and propagates resource close errors", async () => {
+    const disposeAllAndWait = vi.fn(async (_options?: { strict?: boolean }) => {
+      throw new Error("resource flush failed");
+    });
+    const services = new ServiceCollection().register(ICloudContentService, {
+      prepare: vi.fn(),
+      release: vi.fn(),
+      readPublishedMedia: vi.fn(),
+      disposeAllAndWait,
+    });
+    await expect(disposeServiceResourcesAndWait(services, { strict: true })).rejects.toThrow(
+      "flush failed",
+    );
+    expect(disposeAllAndWait).toHaveBeenCalledWith({ strict: true });
+  });
 });

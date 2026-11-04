@@ -1,7 +1,4 @@
-import type {
-  ZCodeAutomationRunOutcome,
-  ZCodeAutomationTrigger,
-} from "@zcode/shared";
+import type { ZCodeAutomationRunOutcome, ZCodeAutomationTrigger } from "@zcode/shared";
 
 export interface CronRunLifecycleRepo {
   ensureRunClaimed(params: {
@@ -11,11 +8,7 @@ export interface CronRunLifecycleRepo {
     scheduledAt: number | null;
     trigger: ZCodeAutomationTrigger;
   }): Promise<void>;
-  markRunOutcome(
-    runId: string,
-    outcome: ZCodeAutomationRunOutcome,
-    error?: string,
-  ): Promise<void>;
+  markRunOutcome(runId: string, outcome: ZCodeAutomationRunOutcome, error?: string): Promise<void>;
   markRunDispatch(params: {
     runId: string;
     dispatchStatus: "failed_to_dispatch";
@@ -42,17 +35,17 @@ export function startManualClaimHeartbeat(
     repo: Pick<CronRunLifecycleRepo, "touchManualClaim">;
     logWarn: LogWarn;
     intervalMs?: number;
+    trackWork?: (run: () => Promise<void>) => Promise<void>;
   },
 ): { dispose(): void } {
   const timer = setInterval(() => {
-    void params.repo
-      .touchManualClaim(params.automationId, params.workspaceKey)
-      .catch((error) =>
-        params.logWarn(
-          `续租 manual automation claim 失败 automation=${params.automationId} runId=${params.runId}`,
-          error,
-        ),
-      );
+    const touch = () => params.repo.touchManualClaim(params.automationId, params.workspaceKey);
+    void (params.trackWork ? params.trackWork(touch) : touch()).catch((error) =>
+      params.logWarn(
+        `续租 manual automation claim 失败 automation=${params.automationId} runId=${params.runId}`,
+        error,
+      ),
+    );
   }, params.intervalMs ?? MANUAL_CLAIM_HEARTBEAT_MS);
   return { dispose: () => clearInterval(timer) };
 }

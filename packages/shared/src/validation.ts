@@ -850,6 +850,16 @@ export const hostIncomingMessageSchema = z.discriminatedUnion("type", [
   hostAttachServicePortMessageSchema,
   hostDetachServicePortMessageSchema,
   hostDisposeMessageSchema,
+  z
+    .object({
+      type: z.enum([
+        "prepare-data-directory-migration",
+        "reserve-data-directory-migration",
+        "cancel-data-directory-migration",
+      ]),
+      requestId: nonEmptyStringSchema,
+    })
+    .strict(),
   hostBroadcastEnvelopeSchema,
   hostBroadcastClaimResultMessageSchema,
   hostTaskRealtimeDeliverMessageSchema,
@@ -1403,6 +1413,18 @@ export type HostResourceUsageSnapshotResultResponse = z.infer<
 >;
 
 export const hostResponseMessageSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.enum([
+        "data-directory-migration-prepared",
+        "data-directory-migration-reserved",
+        "data-directory-migration-cancelled",
+      ]),
+      requestId: nonEmptyStringSchema,
+      ok: z.boolean(),
+      error: z.string().optional(),
+    })
+    .strict(),
   z.object({ type: z.literal("network-capture-batch"), batch: networkCaptureBatchSchema }).strict(),
   z
     .object({ type: z.literal("database-startup-state"), state: databaseStartupStateSchema })

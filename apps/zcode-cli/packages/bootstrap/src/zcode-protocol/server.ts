@@ -3,6 +3,7 @@ import { createNodeNetworkCapture } from "@zcode/shared/node";
 import { networkCaptureControlSchema, zcodeProtocolNotifications } from "@zcode/shared";
 import {
   zcodePluginsCancelOperationParamsSchema,
+  zcodeProcessPrepareDataDirectoryMigrationParamsSchema,
   zcodeProtocolMethods,
   zcodeWorkspaceCancelGenerateTextParamsSchema,
   zcodeWorkspaceHookTrustGrantParamsSchema,
@@ -56,6 +57,7 @@ import {
 } from "./server-operations.js";
 import { listChildProcesses } from "./process-child-processes.js";
 import { ProtocolRuntimeResources } from "./runtime-resources.js";
+import { ProtocolDataDirectoryMigration } from "./data-directory-migration.js";
 import {
   readWorkspacePresentation,
   testProviderModelConnectivity,
@@ -277,9 +279,14 @@ export class ZCodeProtocolAgentServer {
     ZCodeProtocolPostResponseBatch
   >();
   private nextClientRequestId = 1;
+  private activeDataDirectoryRequests = 0;
+  private readonly dataDirectoryMigration: ProtocolDataDirectoryMigration;
 
   constructor(deps: ZCodeProtocolAgentDependencies) {
     this.runtimeResources = new ProtocolRuntimeResources(deps.createZCodeApp);
+    this.dataDirectoryMigration = new ProtocolDataDirectoryMigration(this.runtimeResources, () =>
+      this.assertDataDirectoryMigrationIdle(),
+    );
     const resolvedDeps = {
       ...deps,
       createZCodeApp: this.runtimeResources.create,
@@ -455,6 +462,23 @@ export class ZCodeProtocolAgentServer {
   async handleMessage(
     message: ZCodeProtocolMessage,
   ): Promise<ZCodeProtocolError | ZCodeProtocolResponse | undefined> {
+    if (
+      isRequest(message) &&
+      message.method === zcodeProtocolMethods.processPrepareDataDirectoryMigration
+    ) {
+      try {
+        const { phase } = zcodeProcessPrepareDataDirectoryMigrationParamsSchema.parse(
+          message.params,
+        );
+        return this.ok(message.id, await this.dataDirectoryMigration.run(phase));
+      } catch (error) {
+        const protocolError = toProtocolError(error);
+        return this.fail(message.id, protocolError.code, protocolError.message, protocolError.data);
+      }
+    }
+    if (this.dataDirectoryMigration.isSealed && isRequest(message)) {
+      return this.fail(message.id, -32000, "Data directory migration has reserved this process");
+    }
     this.runtimeResources.assertServing();
     if (isResponse(message)) {
       this.resolveClientRequest(message.id, message.result);
@@ -485,12 +509,34 @@ export class ZCodeProtocolAgentServer {
     return undefined;
   }
 
+  private assertDataDirectoryMigrationIdle(): void {
+    if (
+      this.activeDataDirectoryRequests ||
+      this.pendingClientRequests.size ||
+      this.pluginOperationControllers.size ||
+      this.workspaceGenerateTextControllers.size
+    ) {
+      throw new Error("Data migration is blocked by active protocol operations");
+    }
+    for (const [sessionId, record] of this.context.sessions) {
+      if (
+        record.activeAbortController ||
+        record.residencyFinalizationCount ||
+        this.context.v4Interactions.hasPendingForSession(sessionId) ||
+        this.context.v4Gateway?.hasResidencyBlockingCommands(sessionId)
+      ) {
+        throw new Error("Data migration is blocked by an active session");
+      }
+    }
+  }
+
   private async handleRequest(
     request: ZCodeProtocolRequest,
   ): Promise<ZCodeProtocolError | ZCodeProtocolResponse> {
     // request id 可在前一请求完成后复用；新请求不能继承未消费的旧 outbox。
     this.postResponseOutbox.delete(request.id);
     let releaseResidencyOperation: (() => void) | undefined;
+    this.activeDataDirectoryRequests += 1;
     try {
       // subscribe hydration、workspace 配置与 resume 都可能跨 await。若只看
       // session 当前状态，sampler 会在 handler 持有旧 record 时把它关闭。进程级 lease
@@ -505,6 +551,7 @@ export class ZCodeProtocolAgentServer {
       const protocolError = toProtocolError(error);
       return this.fail(request.id, protocolError.code, protocolError.message, protocolError.data);
     } finally {
+      this.activeDataDirectoryRequests -= 1;
       releaseResidencyOperation?.();
     }
   }

@@ -160,6 +160,7 @@ vi.mock("@/i18n/IntlProvider.js", () => ({
           "settings.dataBaseDirPlaceholder": "默认：用户主目录",
           "settings.dataBaseDirBrowse": "选择文件夹",
           "settings.dataBaseDirSave": "保存",
+          "settings.dataBaseDirMigrate": "迁移并重启",
         };
         return messages[id] ?? id;
       },
@@ -251,7 +252,17 @@ describe("GeneralSectionContent data directory control", () => {
     await renderGeneralSection();
 
     expect(capturedInputs.some((input) => input.readOnly === true)).toBe(true);
-    expect(findButton("保存")?.disabled).toBe(true);
+    expect(findButton("迁移并重启")?.disabled).toBe(true);
+  });
+
+  it("迁移明确要求重启，Web 不提供本地目录迁移入口", async () => {
+    await renderGeneralSection();
+    expect(findButton("迁移并重启")).toBeDefined();
+    capturedButtons.length = 0;
+    capturedInputs.length = 0;
+    await renderGeneralSection({ isDesktop: false });
+    expect(findButton("迁移并重启")).toBeUndefined();
+    expect(findButton("选择文件夹")).toBeUndefined();
   });
 
   it("ModelIO 全量保留默认关闭，并通过标准设置开关提交", async () => {

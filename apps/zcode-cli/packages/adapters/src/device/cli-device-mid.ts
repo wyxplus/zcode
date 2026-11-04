@@ -1,3 +1,4 @@
+import { getUnifiedDataRoot } from "@zcode/shared/data-directory";
 import { mkdir, open, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
@@ -54,6 +55,8 @@ export function ensureCliDeviceMid(options: EnsureCliDeviceMidOptions = {}): Pro
 
 function resolveCliTelemetryStateFile(options: EnsureCliDeviceMidOptions): string {
   const env = options.env ?? process.env;
+  if (!options.baseDir && getUnifiedDataRoot())
+    return join(getUnifiedDataRoot()!, "v2", "telemetry-state.json");
   const configuredBaseDir =
     options.baseDir ?? env[ZCODE_DATA_BASE_DIR_ENV_KEY]?.trim() ?? homedir();
   const baseDir = configuredBaseDir.length > 0 ? configuredBaseDir : homedir();

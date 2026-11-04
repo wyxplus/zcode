@@ -1,4 +1,5 @@
 import { disposeServiceResourcesAndWait, getAppConfigDir } from "@zcode/services/node";
+import { acquireDataDirectoryUsageLease } from "@zcode/shared/data-directory";
 import type { IChannel } from "@zcode/rpc";
 import {
   ZCODE_VERSION,
@@ -39,6 +40,7 @@ if (process.argv.includes("--version")) {
 }
 
 async function main() {
+  await acquireDataDirectoryUsageLease({ role: "stdio-server" });
   // Phase 1: Send hello message
   const hello: HelloMessage = {
     type: "zcode-hello",

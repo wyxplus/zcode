@@ -6,6 +6,7 @@ import type {
   WorkflowAgentCallInput,
 } from "@zcode/contracts";
 import { homedir } from "node:os";
+import { getUnifiedDataRoot } from "@zcode/shared/data-directory";
 import { isAbsolute, join, relative } from "node:path";
 
 const STRUCTURED_OUTPUT_PROMPT =
@@ -171,7 +172,8 @@ export function inferScriptWorkflowScope(
   workingDirectory: string,
 ): "explicit" | "project" | "user" {
   if (isWithin(scriptPath, join(workingDirectory, ".zcode", "workflows"))) return "project";
-  if (isWithin(scriptPath, join(homedir(), ".zcode", "workflows"))) return "user";
+  if (isWithin(scriptPath, join(getUnifiedDataRoot() ?? join(homedir(), ".zcode"), "workflows")))
+    return "user";
   return "explicit";
 }
 

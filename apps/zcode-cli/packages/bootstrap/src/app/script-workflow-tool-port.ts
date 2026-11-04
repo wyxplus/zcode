@@ -1,4 +1,5 @@
 import { homedir } from "node:os";
+import { getUnifiedDataRoot } from "@zcode/shared/data-directory";
 import { join, resolve } from "node:path";
 import {
   WORKFLOW_RUN_ID_PATTERN,
@@ -114,12 +115,16 @@ export function createScriptWorkflowToolPort(deps: ScriptWorkflowToolPortDeps): 
             taskId: runId,
           };
           launchSnapshots.set(runId, snapshot);
-          deps.logger?.error("Background workflow failed before status was persisted", toError(error), {
-            event: "workflow.tool.background_failed",
-            module: "bootstrap.workflow",
-            runId,
-            status: "failed",
-          });
+          deps.logger?.error(
+            "Background workflow failed before status was persisted",
+            toError(error),
+            {
+              event: "workflow.tool.background_failed",
+              module: "bootstrap.workflow",
+              runId,
+              status: "failed",
+            },
+          );
           return snapshot;
         },
       );
@@ -315,7 +320,7 @@ async function resolveNamedWorkflowPath(
   const fileName = workflowFileName(name);
   const candidates = [
     join(deps.workingDirectory, ".zcode", "workflows", fileName),
-    join(homedir(), ".zcode", "workflows", fileName),
+    join(getUnifiedDataRoot() ?? join(homedir(), ".zcode"), "workflows", fileName),
   ];
   const builtIn = BUILTIN_WORKFLOW_ALLOWLIST.get(name);
   if (builtIn) candidates.push(builtIn);

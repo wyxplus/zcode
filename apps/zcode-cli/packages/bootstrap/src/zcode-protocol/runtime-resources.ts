@@ -6,12 +6,21 @@ export class ProtocolRuntimeResources {
   private stopping = false;
   private readonly apps = new Set<ZCodeApp>();
   private closePromise?: Promise<void>;
+  private migrationPromise?: Promise<void>;
+  private migrationReserved = false;
+  private creatingCount = 0;
 
   constructor(private readonly factory: ZCodeProtocolAgentDependencies["createZCodeApp"]) {}
 
   readonly create: ZCodeProtocolAgentDependencies["createZCodeApp"] = async (options) => {
     this.assertServing();
-    const app = await this.factory(options);
+    this.creatingCount += 1;
+    let app: ZCodeApp;
+    try {
+      app = await this.factory(options);
+    } finally {
+      this.creatingCount -= 1;
+    }
     const originalClose = app.close?.bind(app);
     let closing: Promise<void> | undefined;
     app.close = () => {
@@ -35,6 +44,57 @@ export class ProtocolRuntimeResources {
 
   assertServing(): void {
     if (this.stopping) throw new Error("ZCode Protocol runtime is stopping");
+    if (this.migrationReserved)
+      throw new Error("ZCode Protocol runtime is reserved for data migration");
+  }
+
+  reserveForDataDirectoryMigration(): void {
+    if (this.stopping || this.migrationPromise)
+      throw new Error("Data migration resources are already closing");
+    this.migrationReserved = true;
+    try {
+      this.assertMigrationIdle();
+    } catch (error) {
+      // BUSY 只拒绝本次迁移，不能关闭或遗失已经接受的命令。
+      this.migrationReserved = false;
+      throw error;
+    }
+  }
+
+  cancelDataDirectoryMigration(): void {
+    if (this.stopping || this.migrationPromise)
+      throw new Error("Cannot cancel data migration after resource close started");
+    this.migrationReserved = false;
+  }
+
+  private assertMigrationIdle(): void {
+    if (this.creatingCount > 0) throw new Error("Data migration requires idle app initialization");
+    for (const app of this.apps) {
+      if (!app.prepareForDataDirectoryMigration || app.runtime.hasResidencyBlockingWork()) {
+        throw new Error("Data migration requires idle sessions and strict resource close support");
+      }
+    }
+  }
+
+  prepareForDataDirectoryMigration(): Promise<void> {
+    if (this.migrationPromise) return this.migrationPromise;
+    if (!this.migrationReserved)
+      return Promise.reject(new Error("Data migration must be reserved before close"));
+    this.stopping = true;
+    this.migrationPromise = Promise.resolve().then(async () => {
+      this.assertMigrationIdle();
+      const outcomes = await Promise.allSettled(
+        [...this.apps].map(async (app) => {
+          await app.prepareForDataDirectoryMigration!();
+          this.apps.delete(app);
+        }),
+      );
+      const failures = outcomes.flatMap((result) =>
+        result.status === "rejected" ? [result.reason] : [],
+      );
+      if (failures.length) throw new AggregateError(failures, "Data migration shutdown failed");
+    });
+    return this.migrationPromise;
   }
 
   close(): Promise<void> {

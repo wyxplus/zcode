@@ -338,7 +338,9 @@ export interface ZCodeApp {
    * coordinator 并重发 admission 状态，否则已信任 Hook 继续被拒、banner 不刷新。
    */
   reloadWorkspaceHookTrust(): Promise<void>;
-  close?(): Promise<void>;
+  close?(options?: { strict?: boolean }): Promise<void>;
+  /** 迁移专用：只有无在途工作且全部资源严格关闭后才返回。 */
+  prepareForDataDirectoryMigration?(): Promise<void>;
   getMode(): CollaborationMode;
   getModel(): string;
   /** current-only 协议快照精确读取当前 Registry 模型，避免枚举整个目录。 */

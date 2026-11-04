@@ -44,7 +44,15 @@ import {
 } from "electron";
 import type { UtilityProcess as ElectronUtilityProcess } from "electron";
 import { spawn } from "node:child_process";
-import { join, resolve } from "node:path";
+import { resolveDataDirectoryHome, resolveManagedDataRoot } from "@zcode/shared/data-directory";
+import { migrateDesktopDataDirectory } from "./desktopDataDirectoryMigration.js";
+import {
+  closeProcessForDataMigration,
+  requestDataMigrationBarrier,
+  reserveDataMigrationOwners,
+  cancelDataMigrationOwners,
+} from "./desktopDataMigrationLifecycle.js";
+import { dirname, join, resolve } from "node:path";
 import { homedir, hostname } from "node:os";
 import {
   createCredentialService,
@@ -80,6 +88,7 @@ import {
   type UpdateStatePayload,
   type TelemetryEventPayload,
   HostMessageTypes,
+  HostResponseTypes,
 } from "@zcode/shared";
 import { logger, webRemoteControlRelayLogger } from "./logger.js";
 import { markMainLaunchAppReady } from "./desktopLaunchMarks.js";
@@ -561,7 +570,7 @@ async function runBrowserCommandOnView(params: {
 let currentDesktopZoomLevel = 0;
 let currentDesktopWindowSize: DesktopWindowSize | undefined;
 const preloadPath = join(import.meta.dirname, "../preload/index.cjs");
-const settingsFile = join(homedir(), ".zcode", "v2", "setting.json");
+const settingsFile = join(resolveManagedDataRoot(), "v2", "setting.json");
 let activeAppShutdownPolicy = resolveAppShutdownPolicy("normal", process.platform);
 let activeAppShutdownKind: AppShutdownKind | null = null;
 const WINDOWS_AGENT_FORCE_KILL_TIMEOUT_MS = 2_000;
@@ -650,6 +659,7 @@ const windowWorkspaceMap = new Map<number, Set<string>>();
 const windowTaskRealtimeHostIdMap = new Map<number, string>();
 const windowUnreadCountMap = new Map<number, number>();
 const windowHostProcessMap = new Map<number, ElectronUtilityProcess>();
+let dataDirectoryMigrationPhase: "reserving" | "closing" | null = null;
 const cuaPipFocusRouter = createCuaPipFocusRouter({
   send: (windowId, event) => {
     windowHostProcessMap.get(windowId)?.postMessage({
@@ -687,6 +697,7 @@ function wakeOffPeakScheduler(offPeakTaskId?: string): void {
 }
 // 选一个本地 host 执行派发：本期本地 workspace 由任一本地窗口 host 的 createTask 按 path 拉起/复用 agent。
 function resolveCronDispatchHost(): ElectronUtilityProcess | null {
+  if (dataDirectoryMigrationPhase === "closing") return null;
   const first = windowHostProcessMap.values().next();
   return first.done ? null : first.value;
 }
@@ -1807,6 +1818,9 @@ function openUpdateStatusWindow() {
 }
 
 function createWindowInstance(startupBootstrap: StartupWindowBootstrap = {}) {
+  if (dataDirectoryMigrationPhase) {
+    throw new Error("ZCode data directory migration is in progress");
+  }
   const runtimeProcessEnvPreparation = takeRuntimeProcessEnvPreparation();
   const win = createWindow({
     iconPath,
@@ -1840,8 +1854,10 @@ function createWindowInstance(startupBootstrap: StartupWindowBootstrap = {}) {
     windowHostProcessMap,
     onHostProcessReady: (windowKey) => cuaPipFocusRouter.refreshWindow(windowKey),
     awaitFirstHostSpawnDecision,
-    spawnHostProcess: (win, label, initMessage) =>
-      spawnHostProcess(
+    spawnHostProcess: (win, label, initMessage) => {
+      if (dataDirectoryMigrationPhase)
+        throw new Error("ZCode data directory migration is in progress");
+      return spawnHostProcess(
         win,
         label,
         {
@@ -1963,7 +1979,8 @@ function createWindowInstance(startupBootstrap: StartupWindowBootstrap = {}) {
             },
           },
         },
-      ),
+      );
+    },
     disposeHostProcess: (child, label, forceKillDelayMs) =>
       disposeHostProcess(
         child,
@@ -2297,6 +2314,122 @@ app.whenReady().then(async () => {
   }
 
   registerPlatformIpcHandlers({
+    migrateDataDirectory: async (targetBaseDir) => {
+      if (dataDirectoryMigrationPhase || listDisposingHostProcesses().length > 0) {
+        throw new Error("ZCODE_DATA_IN_USE: ZCode is already closing or migrating");
+      }
+      dataDirectoryMigrationPhase = "reserving";
+      let migrationHosts = [...windowHostProcessMap.values()];
+      const restart = async () => {
+        app.relaunch();
+        await prepareAppQuit("data-directory-migration");
+        app.quit();
+      };
+      try {
+        await migrateDesktopDataDirectory({
+          homeDir: resolveDataDirectoryHome(),
+          appBaseDir: getDataBaseDir(),
+          appDataDir: app.getPath("appData"),
+          userDataDir: app.getPath("userData"),
+          sessionDataDir: app.getPath("sessionData"),
+          variant: !app.isPackaged
+            ? "development"
+            : ZCODE_PRODUCT_FLAVOR === "preview"
+              ? "preview"
+              : "stable",
+          targetBaseDir,
+          includeSiblingProfiles:
+            !process.env.ZCODE_DESKTOP_USER_DATA_DIR &&
+            !process.env.ZCODE_DESKTOP_USE_ELECTRON_DEFAULT_USER_DATA &&
+            !process.env.ZCODE_DESKTOP_APPLICATION_NAME,
+          windowsAppInstallDir:
+            process.platform === "win32" && app.isPackaged
+              ? dirname(process.resourcesPath)
+              : undefined,
+          reserveProcesses: async (migrationId) => {
+            migrationHosts = [
+              ...new Set([
+                ...migrationHosts,
+                ...windowHostProcessMap.values(),
+                ...listDisposingHostProcesses(),
+              ]),
+            ];
+            await reserveDataMigrationOwners({
+              reserveScheduler: async () => {
+                await cronScheduler?.reserveDataDirectoryMigration(migrationId);
+              },
+              reserveHosts: migrationHosts.map(
+                (child) => () =>
+                  requestDataMigrationBarrier(child, {
+                    requestId: migrationId,
+                    requestType: HostMessageTypes.ReserveDataDirectoryMigration,
+                    responseType: HostResponseTypes.DataDirectoryMigrationReserved,
+                  }),
+              ),
+            });
+          },
+          cancelReservation: async (migrationId) => {
+            await cancelDataMigrationOwners({
+              cancelScheduler: async () => {
+                await cronScheduler?.cancelDataDirectoryMigration(migrationId);
+              },
+              cancelHosts: migrationHosts
+                .filter((child) => child.pid !== undefined)
+                .map(
+                  (child) => () =>
+                    requestDataMigrationBarrier(child, {
+                      requestId: migrationId,
+                      requestType: HostMessageTypes.CancelDataDirectoryMigration,
+                      responseType: HostResponseTypes.DataDirectoryMigrationCancelled,
+                    }),
+                ),
+            });
+          },
+          prepareProcesses: async (migrationId) => {
+            dataDirectoryMigrationPhase = "closing";
+            const hosts = migrationHosts;
+            // 关闭 scheduler 派发和所有窗口 Host 的业务入口，再接受真正的关库/进程退出确认。
+            const results = await Promise.allSettled([
+              cronScheduler?.prepareDataDirectoryMigration(migrationId),
+              ...hosts.map((child) =>
+                closeProcessForDataMigration(child, {
+                  requestId: migrationId,
+                  prepareType: HostMessageTypes.PrepareDataDirectoryMigration,
+                  responseType: HostResponseTypes.DataDirectoryMigrationPrepared,
+                  exitType: HostMessageTypes.Dispose,
+                }),
+              ),
+            ]);
+            const failure = results.find((result) => result.status === "rejected");
+            if (failure?.status === "rejected") throw failure.reason;
+            cronScheduler = null;
+            const profiles = new Set(
+              webContents.getAllWebContents().map((contents) => contents.session),
+            );
+            for (const profile of profiles) profile.flushStorageData();
+            await Promise.all([...profiles].map((profile) => profile.cookies.flushStore()));
+          },
+          restart,
+          restartAfterFailure: async (error) => {
+            logger.warn("[data-directory-migration] close failed; preserving original root", error);
+            await dialog.showMessageBox({
+              type: "error",
+              title: "ZCode",
+              message:
+                currentApplicationLocale === "zh-CN"
+                  ? "数据目录未更改，原有数据已保留。应用将重新启动。"
+                  : "The data directory was not changed. Your original data is retained. ZCode will restart.",
+              detail: error instanceof Error ? error.message : String(error),
+              buttons: [currentApplicationLocale === "zh-CN" ? "重新启动" : "Restart"],
+              noLink: true,
+            });
+            await restart();
+          },
+        });
+      } finally {
+        if (dataDirectoryMigrationPhase === "reserving") dataDirectoryMigrationPhase = null;
+      }
+    },
     fetchHelpConfig: readHelpConfig,
     logger,
     // CDP-on-guest pivot：renderer `<webview>` dom-ready 上报 guest webContentsId → attach。

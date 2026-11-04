@@ -9,15 +9,19 @@ it("isolates topic preparation and exposes no attachment payload in its UI snaps
     actor: { providerMessageId: "m", providerUserId: "u", displayName: "User" },
     attachments: [{ dataBase64: "private-file" }],
   } as BotInboundMessage;
+  expect(state.hasPending()).toBe(false);
   state.add("topic-a", message);
+  expect(state.hasPending()).toBe(true);
   expect(state.snapshot("topic-b")).toEqual([]);
   expect(JSON.stringify(state.snapshot("topic-a"))).not.toContain("private-file");
   expect(state.retry("topic-a", "m")).toBeUndefined();
   state.update("topic-a", ["m"], "failed", "Download failed");
   expect(state.retry("topic-a", "m")).toBe(message);
+  expect(state.hasPending()).toBe(true);
   state.clear("topic-a");
   expect(state.retry("topic-a", "m")).toBeUndefined();
   expect(state.snapshot("topic-a")).toEqual([]);
+  expect(state.hasPending()).toBe(false);
 });
 
 it("keeps messages arriving during stop in waitingStop until stop completes", () => {

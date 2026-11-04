@@ -18,6 +18,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
+import { getUnifiedDataRoot } from "@zcode/shared/data-directory";
 import { join } from "node:path";
 import {
   SAVED_WORKFLOW_FILE_EXTENSION,
@@ -41,7 +42,7 @@ export interface SavedWorkflowRoot {
 
 /**
  * `savedWorkflowRoots` / 派生函数的可选参数。`homeDir` 只为测试注入：生产恒取
- * `os.homedir()`（agent 进程所在机器的家目录），**不**跟任何 `storage.dir` 配置走。
+ * 已提交的统一数据根，未迁移时取 `os.homedir()` 下 `.zcode`；不跟任意 session `storage.dir` 走。
  */
 export interface SavedWorkflowRootsOptions {
   homeDir?: string;
@@ -59,7 +60,13 @@ export function savedWorkflowRoots(
 ): SavedWorkflowRoot[] {
   return [
     { scope: "project", dir: join(cwd, SAVED_WORKFLOW_PROJECT_DIR) },
-    { scope: "global", dir: join(options?.homeDir ?? homedir(), SAVED_WORKFLOW_GLOBAL_DIR) },
+    {
+      scope: "global",
+      dir:
+        !options?.homeDir && getUnifiedDataRoot()
+          ? join(getUnifiedDataRoot()!, "workflows")
+          : join(options?.homeDir ?? homedir(), SAVED_WORKFLOW_GLOBAL_DIR),
+    },
   ];
 }
 

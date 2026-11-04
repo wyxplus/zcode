@@ -1,5 +1,11 @@
 # Tool Change Chain Spec
 
+## 统一数据目录中的全局工作流
+
+数据目录迁移提交后，SaveWorkflow 和全局脚本查找使用已验证的统一数据根下 `workflows/`；
+未迁移继续使用 `~/.zcode/workflows/`。项目作用域优先级、工具 schema、权限与执行语义不变。
+启动定位、空目标迁移和停写规则统一维护于根目录 `docs/desktop/configurable-data-directory.md`。
+
 ## 工具内部模型请求的会话归因（2026-09-30）
 
 WebSearch、WebFetch processing、ReadSessionContext 的内部模型请求继承发起工具的宿主

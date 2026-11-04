@@ -3144,26 +3144,24 @@ grep；`rg` 只选一个代表命令证明两种开关状态一致。
 
 ## CDD. Configurable Data Directory / 可配置数据存储路径
 
-本组只把普通 conversation 作为 App 数据迁移、冷启动恢复和新路径写入的真实触发器，不改变
-conversation 协议。`dataBaseDir` 只迁移 App 数据；storage profile 已回滚，CLI session、plugins、
-agents、commands、skills、logs 与 rollout 继续使用 `<HOME>/.zcode/cli`，项目内 `.zcode/*` 也不迁移。
+权威规则见 [统一数据目录](desktop/configurable-data-directory.md)。用户确认：常规迁移仅允许当前完整数据根到空文件夹；首次升级完整归拢历史实际来源；不自动合并目标、不删除源副本。以下组合 accepted，执行证据单独记录，不以测试前置冒充产品门禁。
 
-用户于 2026-08-10 确认目标语义为：App `.zcode/v2` 与非项目 conversation workspace 一并迁移；
-只允许 idle 发起；保存后进入禁止旧路径继续写入的待重启态；非空 ZCode 目标拒绝；冷重启后原任务
-历史可见且可继续对话。首轮不改产品，因此只实现空目标、idle、保存后立即重启的 CDD01，其他已
-确认边界保留为后续产品实现/验证项。
+| ID    | 前置                                           | 动作                         | 断言                                                                      | Review   |
+| ----- | ---------------------------------------------- | ---------------------------- | ------------------------------------------------------------------------- | -------- |
+| CDD01 | idle、已有项目任务、目标空                     | 设置迁移并冷重启，原任务续聊 | App/CLI/插件/cache 迁至新根，旧内容完整，新写只入新根，项目不变           | accepted |
+| CDD02 | 默认对话 workspace 有用户文件                  | 迁移并恢复原任务             | 文件完整、原任务身份/关联保留，执行路径正确                               | accepted |
+| CDD03 | busy/queued/多窗口/手机提交/调度器竞争         | 发起迁移                     | 两阶段预留；忙碌则恢复入口、不关库或重启，accepted 输入继续处理           | accepted |
+| CDD04 | 目标存在普通或隐藏文件                         | 发起迁移                     | 拒绝且双方不变，不合并任何内容                                            | accepted |
+| CDD05 | HOME CLI + 自定义 App + Electron 多根          | 首次归拢                     | 按实际 owner 选来源，旧 v2 不覆盖现用数据，冲突拒绝                       | accepted |
+| CDD06 | WAL 有已提交内容、历史 artifacts/插件/凭据     | 迁移并使用                   | DB完整、记录不减、引用可达、插件可加载、凭据可解密                        | accepted |
+| CDD07 | 复制/校验/指针提交阶段                         | 故障注入或进程中断后重启     | 幂等恢复、旧数据保留、无半成品活动根                                      | accepted |
+| CDD08 | 已迁移且新增消息/插件状态                      | 再迁到另一个空目标           | 新旧数据一起带走；不直接复用旧副本                                        | accepted |
+| CDD09 | 活动盘缺失、只读或 locator损坏                 | 启动                         | 阻止业务启动，不回HOME建空库                                              | accepted |
+| CDD10 | 中文/空格/长路径/junction/目录别名             | 迁移                         | 保持链接语义或明确拒绝；嵌套/别名不递归复制                               | accepted |
+| CDD11 | 独立CLI或另一版本profile仍持租约               | 迁移/迁移中再启动            | 未安全关闭不执行，新进程不能重开旧根                                      | accepted |
+| CDD12 | Desktop continuous + 手机 replayable、远端连接 | 迁移前后重连                 | 活跃远端连接拒绝迁移；断开后迁移，重连保持session且无重复执行，远端根不变 | accepted |
 
-| ID    | 前置状态                                                                                                                 | 用户/系统事件                                                              | 规则命中                            | 期望结果                                                                                                                                                                                                             | Review        |
-| ----- | ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
-| CDD01 | Desktop 本地 `desktop-continuous`；项目 workspace；已有 completed task；目标目录存在且为空；CLI 位于 `<HOME>/.zcode/cli` | 设置页选择目标并保存；不再执行业务操作，立即完整冷重启；在原 task 继续对话 | idleEmptyTargetImmediateColdRestart | UI 显示待重启；bootstrap 指针保存目标；App `v2` canary/task index 被复制；重启后原历史可见且 follow-up completed；新 task-index 更新只发生在目标 App 根；CLI 根与项目 `.zcode/*` 保持不变，目标下不出现 `.zcode/cli` | accepted      |
-| CDD02 | 非项目 conversation workspace 已有用户文件；目标目录为空                                                                 | 保存新目录并完整冷重启                                                     | copyConversationWorkspace           | `<old>/.zcode/workspace` 非覆盖复制到目标且文件可继续使用；当前 `copyDataDirectory()` 只复制 `.zcode/v2`，实现与已确认 spec 冲突                                                                                     | bug-candidate |
-| CDD03 | 当前 task 为 busy/streaming，或保存成功后尚未重启                                                                        | 用户尝试迁移，或继续发起会写 App 数据的操作                                | idleOnlyAndPendingRestartWriteBlock | busy 时不开始复制；保存成功后进入待重启态并阻止继续写旧 App 根。CDD01 只用 idle 前置并立即重启，不把测试约束冒充产品 guard                                                                                           | planned       |
-| CDD04 | 目标目录已有 `.zcode/v2`、task index、provider/credential/session 等任一 ZCode 数据                                      | 用户尝试保存该目录                                                         | rejectNonEmptyZCodeTarget           | 迁移被拒绝，旧根和目标根均不修改；不执行逐文件 `force:false` 拼接，也不尝试合并 SQLite、凭据、provider 或 session 状态                                                                                               | planned       |
-
-剪枝：首个 WDIO 只保留 CDD01 的一个代表组合，不展开 queue、stop、reconnect、recovery、复制失败、
-Windows 安装目录、SSH/WSL/Docker、remote workspace、手机 `web-remote-replayable`、theme、locale、
-provider family 或非空目标。CDD02-CDD04 的确定性文件/校验边界应先由 service/focused tests 证明，产品
-实现完成后再决定是否增加 GUI case；其中 `CDD03` 不允许用 sleep 模拟写入屏障。
+剪枝：普通项目目录移动、远端主机搬盘、自动清理源、任意非空目标合并不属于此能力。theme/locale/provider 与迁移正确性无新增交叉语义，选一个代表UI组合；Windows文件系统边界、故障注入、CLI租约优先用确定性集成测试，CDD01/02/12补真实端到端证据。
 
 ## QR. Coding Plan Quota Reset / 对话 Composer 额度重置
 

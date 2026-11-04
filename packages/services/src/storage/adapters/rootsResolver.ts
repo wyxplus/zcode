@@ -3,6 +3,7 @@
  * 路径来源由调用方注入（desktop host 传 homedir 与 getDataBaseDir），模块内不读环境变量。
  */
 import { join, resolve } from "node:path";
+import { getUnifiedDataRoot } from "@zcode/shared/data-directory";
 import type { RootsResolverPort } from "../app/ports.js";
 import type { StorageRootSpec } from "@zcode/shared";
 
@@ -33,7 +34,14 @@ export function createStorageRootsResolver(params: {
   getDataBaseDir: () => string;
 }): RootsResolverPort {
   return {
-    resolveRoots: async () =>
-      resolveStorageRoots({ homeDir: params.getHomeDir(), dataBaseDir: params.getDataBaseDir() }),
+    resolveRoots: async () => {
+      const root = getUnifiedDataRoot(params.getHomeDir());
+      // 成功搬迁后的 HOME 只保留旧副本；不能把它作为当前数据继续扫描或清理。
+      if (root) return [{ id: "dataBaseDir", path: root, hasCustomDataBaseDir: true }];
+      return resolveStorageRoots({
+        homeDir: params.getHomeDir(),
+        dataBaseDir: params.getDataBaseDir(),
+      });
+    },
   };
 }

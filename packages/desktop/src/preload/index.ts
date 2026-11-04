@@ -837,6 +837,8 @@ contextBridge.exposeInMainWorld("zcode", {
   setAutoDownloadAndInstallUpdates: (enabled: boolean) =>
     ipcRenderer.invoke(PlatformChannels.SetAutoDownloadAndInstallUpdates, enabled),
   getDesktopSessionActivity: () => ipcRenderer.invoke(PlatformChannels.GetDesktopSessionActivity),
+  migrateDataDirectory: (targetBaseDir: string) =>
+    ipcRenderer.invoke(PlatformChannels.MigrateDataDirectory, targetBaseDir),
   /** 注册自动更新持续状态变化，返回 disposer */
   onUpdateStateChanged: (callback: (payload: UpdateStatePayload) => void): (() => void) => {
     updateStateCallbacks.add(callback);

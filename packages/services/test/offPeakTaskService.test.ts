@@ -119,6 +119,28 @@ describe("OffPeakTaskService 编排", () => {
     }
   });
 
+  it("迁移先封闭后台同步，不能把正在等待的状态写回当作空闲", async () => {
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const read = vi.spyOn(repo, "listNonTerminal").mockImplementation(async () => {
+      await pending;
+      return [];
+    });
+    const syncing = service.runSyncCycle();
+    await vi.waitFor(() => expect(read).toHaveBeenCalledOnce());
+    expect(() => service.reserveForDataDirectoryMigration()).toThrow("DATA_DIRECTORY_BUSY");
+    finish();
+    await syncing;
+    expect(() => service.reserveForDataDirectoryMigration()).not.toThrow();
+    await service.runSyncCycle();
+    expect(read).toHaveBeenCalledOnce();
+    service.cancelDataDirectoryMigration();
+    await service.runSyncCycle();
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
   const createParams = {
     title: "夜间重构",
     prompt: "抽取公共函数",

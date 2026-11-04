@@ -1,3 +1,4 @@
+import { resolveManagedDataRoot } from "@zcode/shared/data-directory";
 import { createBotTopicAdmission } from "#src/zcode-agent/botTopicAdmission.js";
 import {
   readBotGroupRuntimeSnapshot,
@@ -256,7 +257,7 @@ function formatZCodeAgentLogDate(now: Date): string {
 
 function resolveZCodeAgentCurrentLogFilePath(now = new Date()): string {
   const configuredLogDir = process.env.ZCODE_LOG_DIR?.trim();
-  const logDir = configuredLogDir || join(homedir(), ".zcode", "cli", "log");
+  const logDir = configuredLogDir || join(resolveManagedDataRoot(homedir()), "cli", "log");
   return join(logDir, `zcode-${formatZCodeAgentLogDate(now)}.jsonl`);
 }
 
@@ -1860,10 +1861,10 @@ export function createZCodeTaskServiceAdapter(
     });
   });
 
-  function disposeLocalTaskState(): void {
+  function disposeLocalTaskState(disposeOptions?: { strict?: boolean }): void {
     taskIndexTerminalDisposable.dispose();
     taskIndexReadyDisposable.dispose();
-    taskIndexRepo.close();
+    taskIndexRepo.close({ throwOnError: disposeOptions?.strict });
     for (const emitter of taskEmitters.values()) emitter.dispose();
     for (const emitter of globalTaskEmitters.values()) emitter.dispose();
     errorEmitter.dispose();
@@ -1873,12 +1874,14 @@ export function createZCodeTaskServiceAdapter(
     streamedTurnText.clear();
   }
 
-  async function disposeZCodeAgentServiceAndWait(): Promise<void> {
+  async function disposeZCodeAgentServiceAndWait(disposeOptions?: {
+    strict?: boolean;
+  }): Promise<void> {
     const agentService = options.zcodeAgentService as IZCodeAgentService & {
-      disposeAllAndWait?: () => Promise<void>;
+      disposeAllAndWait?: (options?: { strict?: boolean }) => Promise<void>;
     };
     if (agentService.disposeAllAndWait) {
-      await agentService.disposeAllAndWait();
+      await agentService.disposeAllAndWait(disposeOptions);
       return;
     }
     agentService.disposeAll();
@@ -1886,7 +1889,7 @@ export function createZCodeTaskServiceAdapter(
 
   const service: IZCodeTaskService & {
     disposeAll(): void;
-    disposeAllAndWait(): Promise<void>;
+    disposeAllAndWait(options?: { strict?: boolean }): Promise<void>;
   } = {
     async initialize(params) {
       const result = await options.zcodeAgentService.initialize(params);
@@ -3560,18 +3563,21 @@ export function createZCodeTaskServiceAdapter(
       disposeLocalTaskState();
     },
 
-    async disposeAllAndWait(): Promise<void> {
+    async disposeAllAndWait(disposeOptions?: { strict?: boolean }): Promise<void> {
       if (disposed) {
         return;
       }
       disposed = true;
+      memoryDiagnostics.dispose();
       // app 退出必须先断开 task index syncer 的订阅，再等待 agent 进程树完成清理；
       // 否则 host 退出时会把 zcode-cli 的 SIGKILL 兜底 timer 一起带走。
       taskIndexSyncer.disposeAll();
       await Promise.all([...botConnectionScopes.values()].map((scope) => scope.dispose()));
       botConnectionScopes.clear();
-      await disposeZCodeAgentServiceAndWait();
-      disposeLocalTaskState();
+      // adapter 比 Agent service 先释放；必须透传严格关闭，否则第一次关库吞错后，
+      // 后续 Agent 的严格关闭只看到空句柄，迁移就无法证明源数据库已经安全关闭。
+      await disposeZCodeAgentServiceAndWait(disposeOptions);
+      disposeLocalTaskState(disposeOptions);
     },
   };
 

@@ -24,6 +24,7 @@ import {
 import type { MainToSchedulerMessage, SchedulerToMainMessage } from "./schedulerProtocol.js";
 import { settleManualClaimForDispatchResult } from "./manualClaimRelease.js";
 import { settleOffPeakDispatchResult } from "./offPeakDispatchSettlement.js";
+import { createSchedulerDataDirectoryMaintenance } from "./schedulerDataDirectoryMaintenance.js";
 import {
   startSchedulerResourceTelemetry,
   type SchedulerResourceTelemetry,
@@ -61,9 +62,33 @@ let ticking = false;
 let tickRequested = false;
 let schedulerReady = false;
 let disposed = false;
+let pendingSettlements = 0;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 /** 资源遥测：本进程唯一的自采定时器。 */
 let resourceTelemetry: SchedulerResourceTelemetry | null = null;
+const dataDirectoryMaintenance = createSchedulerDataDirectoryMaintenance({
+  pause: () => {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = null;
+  },
+  resume: () => {
+    if (!disposed && !pollTimer) pollTimer = setInterval(requestTick, POLL_INTERVAL_MS);
+  },
+  hasPendingWork: () =>
+    !schedulerReady ||
+    ticking ||
+    pendingSettlements > 0 ||
+    inFlight.size > 0 ||
+    offPeakInFlight.size > 0,
+  close: () => {
+    resourceTelemetry?.stop();
+    resourceTelemetry = null;
+    repo.close({ throwOnError: true });
+    offPeakRepo.close({ throwOnError: true });
+  },
+  postMessage: (message) => parentPort?.postMessage(message),
+  exit: () => process.exit(0),
+});
 
 function log(level: "info" | "warn" | "error", message: string): void {
   const msg: SchedulerToMainMessage = { type: "scheduler-log", level, message };
@@ -85,7 +110,7 @@ function buildRunId(automationId: string, scheduledAt: number): string {
 }
 
 async function tick(): Promise<void> {
-  if (disposed || !schedulerReady || ticking) return;
+  if (disposed || dataDirectoryMaintenance.preparing || !schedulerReady || ticking) return;
   ticking = true;
   try {
     do {
@@ -111,7 +136,7 @@ async function tick(): Promise<void> {
       }
       // manual run 的唤醒可能与当前 tick 重叠；因 ticking=true 直接丢弃会让
       // 用户仍需等待下一轮 20 秒轮询。记录 pending，并在本轮完成后立即补跑。
-    } while (tickRequested && !disposed);
+    } while (tickRequested && !disposed && !dataDirectoryMaintenance.preparing);
   } finally {
     ticking = false;
   }
@@ -352,27 +377,22 @@ async function dispose(): Promise<void> {
     }
   }
   offPeakInFlight.clear();
-  try {
-    repo.close();
-  } catch {
-    // 忽略。
-  }
-  try {
-    offPeakRepo.close();
-  } catch {
-    // 忽略。
-  }
+  // 普通关闭由 Repo 自己记录/吞掉 close 错误；迁移路径显式使用 throwOnError。
+  repo.close();
+  offPeakRepo.close();
   process.exit(0);
 }
 
 parentPort?.on("message", (event: Electron.MessageEvent) => {
   const msg = event.data as MainToSchedulerMessage;
   if (!msg || typeof msg !== "object") return;
+  if (dataDirectoryMaintenance.handleMessage(msg) || dataDirectoryMaintenance.closed) return;
   if (msg.type === "scheduler-dispose") {
     void dispose();
     return;
   }
   if (msg.type === "cron-dispatch-result") {
+    pendingSettlements += 1;
     void settleDispatchResult(msg)
       .then(() => {
         // manual run 可能因同一 automation 已有派发在途而暂时无法认领。
@@ -384,10 +404,14 @@ parentPort?.on("message", (event: Electron.MessageEvent) => {
           "error",
           `settle dispatch result failed runId=${msg.runId}: ${error instanceof Error ? error.message : String(error)}`,
         );
+      })
+      .finally(() => {
+        pendingSettlements -= 1;
       });
     return;
   }
   if (msg.type === "offpeak-dispatch-result") {
+    pendingSettlements += 1;
     offPeakInFlight.delete(msg.offPeakTaskId);
     void settleOffPeakDispatchResult(
       {
@@ -398,12 +422,16 @@ parentPort?.on("message", (event: Electron.MessageEvent) => {
         log,
       },
       msg,
-    ).catch((error) => {
-      log(
-        "error",
-        `settle off-peak dispatch result failed task=${msg.offPeakTaskId}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    });
+    )
+      .catch((error) => {
+        log(
+          "error",
+          `settle off-peak dispatch result failed task=${msg.offPeakTaskId}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      })
+      .finally(() => {
+        pendingSettlements -= 1;
+      });
     return;
   }
   if (msg.type === "scheduler-wake") {

@@ -1,4 +1,5 @@
 import { realpath } from "node:fs/promises";
+import { getUnifiedDataRoot } from "@zcode/shared/data-directory";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
 
@@ -21,6 +22,8 @@ export interface ServerLayout {
 }
 
 export function getDefaultServerDataRoot(): string {
+  const unifiedRoot = getUnifiedDataRoot();
+  if (unifiedRoot) return join(unifiedRoot, "server");
   const configured = process.env.ZCODE_DATA_BASE_DIR?.trim();
   return join(configured || homedir(), ".zcode", "server");
 }
@@ -50,7 +53,9 @@ export function resolveServerLayout(serverRoot = getDefaultServerDataRoot()): Se
   };
 }
 
-export async function resolveCanonicalServerRoot(serverRoot = getDefaultServerDataRoot()): Promise<string> {
+export async function resolveCanonicalServerRoot(
+  serverRoot = getDefaultServerDataRoot(),
+): Promise<string> {
   // 安装前 server root 可能尚不存在；向上找到最近的存在祖先做 realpath，再拼回缺失段，
   // 这样既能收敛已有符号链接，也不会因为 ENOENT 让首次安装失效。
   let candidate = assertServerDataRoot(serverRoot);
@@ -69,7 +74,9 @@ export async function resolveCanonicalServerRoot(serverRoot = getDefaultServerDa
   }
 }
 
-export async function resolveCanonicalServerLayout(serverRoot = getDefaultServerDataRoot()): Promise<ServerLayout> {
+export async function resolveCanonicalServerLayout(
+  serverRoot = getDefaultServerDataRoot(),
+): Promise<ServerLayout> {
   return resolveServerLayout(await resolveCanonicalServerRoot(serverRoot));
 }
 
@@ -106,7 +113,10 @@ export interface UninstallTargetValidation {
   canonicalPath?: string;
 }
 
-export function validateUninstallTarget(serverRoot: string, target: string): UninstallTargetValidation {
+export function validateUninstallTarget(
+  serverRoot: string,
+  target: string,
+): UninstallTargetValidation {
   if (!isAbsolute(target)) {
     return { ok: false, reason: "non-absolute" };
   }

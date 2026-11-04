@@ -19,6 +19,8 @@ import {
 } from "@zcode/shared/process-diagnostic";
 import {
   ZCODE_AGENT_RUNTIME,
+  zcodeProtocolMethods,
+  zcodeProcessPrepareDataDirectoryMigrationResultSchema,
   ZCODE_AGENT_PROVIDER,
   ZCODE_RUNTIME_ENV_KEY,
   resolveWorkspaceKey,
@@ -582,6 +584,98 @@ export class ZCodeAgentProcessManager {
   private readonly runtimeLifecycleEmitter = new Emitter<ZCodeAgentRuntimeLifecycleEvent>();
   private disposeAllInFlight: Promise<void> | undefined;
   private disposed = false;
+  private preparingDataMigration = false;
+  private migrationClosing = false;
+  private migrationGeneration = 0;
+  private migrationReservePending = false;
+  private migrationReserveAbortController: AbortController | undefined;
+  private migrationCancellation: Promise<void> | undefined;
+  private readonly migrationReservedProcesses = new Set<ManagedZCodeAgentProcess>();
+
+  async reserveForDataDirectoryMigration(): Promise<void> {
+    if (this.migrationClosing) throw new Error("DATA_DIRECTORY_ALREADY_CLOSING");
+    if (this.migrationReservePending || this.migrationCancellation)
+      throw new Error("DATA_DIRECTORY_BUSY: Agent maintenance is in progress");
+    const generation = ++this.migrationGeneration;
+    const reserveAbortController = new AbortController();
+    this.migrationReserveAbortController = reserveAbortController;
+    this.migrationReservePending = true;
+    // 先禁止新 runtime，再检查正在启动的进程；不能在检查后允许另一个 workspace 启动。
+    this.preparingDataMigration = true;
+    try {
+      if (this.startingByWorkspaceKey.size > 0) {
+        throw new Error("DATA_DIRECTORY_BUSY: Agent runtime is starting");
+      }
+      for (const managed of this.ownedProcesses) {
+        if (managed.exited) continue;
+        this.migrationReservedProcesses.add(managed);
+        await managed.client.request(
+          zcodeProtocolMethods.processPrepareDataDirectoryMigration,
+          { phase: "reserve" },
+          zcodeProcessPrepareDataDirectoryMigrationResultSchema,
+          { signal: reserveAbortController.signal },
+        );
+        // cancel可以先于慢ACK完成；旧循环不得继续封闭下一进程或污染下一轮预留集合。
+        if (generation !== this.migrationGeneration || !this.preparingDataMigration)
+          throw new Error("DATA_DIRECTORY_CANCELLED: Agent reservation was cancelled");
+      }
+    } finally {
+      this.migrationReservePending = false;
+      if (this.migrationReserveAbortController === reserveAbortController)
+        this.migrationReserveAbortController = undefined;
+    }
+  }
+
+  async cancelDataDirectoryMigration(): Promise<void> {
+    if (this.migrationClosing) throw new Error("DATA_DIRECTORY_ALREADY_CLOSING");
+    if (this.migrationCancellation) return this.migrationCancellation;
+    this.migrationGeneration += 1;
+    // 撤销已取消预留的request watchdog；否则旧ACK缺失会在恢复业务后误淘汰仍健康的Agent。
+    this.migrationReserveAbortController?.abort(
+      new Error("DATA_DIRECTORY_CANCELLED: Agent reservation was cancelled"),
+    );
+    const cancellation = (async () => {
+      const results = await Promise.allSettled(
+        [...this.migrationReservedProcesses].map(async (managed) => {
+          if (managed.exited) return;
+          await managed.client.request(
+            zcodeProtocolMethods.processPrepareDataDirectoryMigration,
+            { phase: "cancel" },
+            zcodeProcessPrepareDataDirectoryMigrationResultSchema,
+          );
+        }),
+      );
+      const failed = results.filter((result) => result.status === "rejected");
+      if (failed.length)
+        throw new AggregateError(
+          failed.map((result) => result.reason),
+          "DATA_DIRECTORY_CANCEL_FAILED",
+        );
+      this.migrationReservedProcesses.clear();
+      this.preparingDataMigration = false;
+    })();
+    this.migrationCancellation = cancellation;
+    try {
+      await cancellation;
+    } finally {
+      if (this.migrationCancellation === cancellation) this.migrationCancellation = undefined;
+    }
+  }
+
+  async prepareForDataDirectoryMigration(): Promise<void> {
+    if (!this.preparingDataMigration || this.migrationReservePending || this.migrationCancellation)
+      throw new Error("DATA_DIRECTORY_NOT_RESERVED");
+    this.migrationClosing = true;
+    for (const managed of this.migrationReservedProcesses) {
+      if (managed.exited)
+        throw new Error("DATA_DIRECTORY_CLOSE_FAILED: Reserved Agent exited before clean close");
+      await managed.client.request(
+        zcodeProtocolMethods.processPrepareDataDirectoryMigration,
+        { phase: "close" },
+        zcodeProcessPrepareDataDirectoryMigrationResultSchema,
+      );
+    }
+  }
 
   /** 进程换代通知（generation>1 时触发）；v4 订阅方据此重订，见 ZCodeAgentRuntimeRestartedEvent。 */
   readonly onRuntimeRestarted = this.runtimeRestartedEmitter.event;
@@ -842,7 +936,7 @@ export class ZCodeAgentProcessManager {
     workspacePath: string;
     workspaceIdentity?: string;
   }): Promise<ZCodeProtocolClient> {
-    if (this.disposed) {
+    if (this.disposed || this.preparingDataMigration) {
       throw new Error("ZCode agent process manager is disposed.");
     }
     const workspaceKey = resolveWorkspaceKey(params);
