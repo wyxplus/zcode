@@ -81,20 +81,29 @@ ZCODE_TARGET_OS=linux ZCODE_TARGET_ARCH=x64 pnpm bundle:desktop
 
 `.github/workflows/windows-installer.yml` 是 GitHub Windows 安装包的构建入口。
 推送 `main`、`codex/windows-installer` 或手动运行该工作流时，在 `windows-2022`
-runner 上构建当前提交，生成未签名的 NSIS `.exe` 安装包。Node 与 pnpm 版本跟随
+runner 上为以下三个渠道分别构建当前提交，生成未签名的 NSIS `.exe` 安装包。Node 与 pnpm 版本跟随
 根目录 `mise.toml`，依赖安装使用冻结的 `pnpm-lock.yaml`。
+
+| 渠道                 | `ZCODE_ENV`  | `ZCODE_PREVIEW_IDENTITY` | 产品身份        | 安装包后缀 |
+| -------------------- | ------------ | ------------------------ | --------------- | ---------- |
+| `stable`             | `production` | `0`                      | `ZCode`         | 无         |
+| `preview-production` | `production` | `1`                      | `ZCode Preview` | 无         |
+| `preview-test`       | `test`       | `0`                      | `ZCode Preview` | `_TEST`    |
+
+每个 matrix job 独占 runner 工作目录，渠道变量在 job 层设置，统一贯穿资源准备、
+应用构建和打包，避免编译期身份与安装包身份不一致。某个渠道失败不取消其他渠道。
 
 GitHub Actions run 持有构建状态，安装包内容仍由既有 desktop 打包脚本负责。
 每次 run 以提交 SHA 标识源码，依次安装依赖、准备本地运行资源、构建应用、打包并执行
 现有产物检查，最后保存 artifact；重试重新构建同一提交，不修改源码或正式更新源。
 
 ```text
-push / workflow_dispatch → 指定提交 → Windows runner
+push / workflow_dispatch → 指定提交 → 三渠道 Windows runner matrix
   → frozen install → prepare:desktop-runtime → build:no-runtime-assets
   → bundle --skip-prepare --skip-build → 产物检查 → Actions artifact
 ```
 
-- `ZCODE_ENV=production` 明确选择生产默认配置与正式产品身份。
+- `ZCODE_ENV` 选择后端环境，`ZCODE_PREVIEW_IDENTITY` 独立选择产品身份；两者按上表显式设置。
 - `ZCODE_TARGET_OS=win`、`ZCODE_TARGET_ARCH=x64` 贯穿资源准备和打包。
 - `ZCODE_SKIP_REMOTE_ASSETS=1` 跳过与本次桌面安装包独立的远程资源发布。
 - `ZCODE_ENABLE_WINDOWS_SIGN=0`、`CSC_IDENTITY_AUTO_DISCOVERY=false` 禁用签名；
@@ -102,8 +111,9 @@ push / workflow_dispatch → 指定提交 → Windows runner
 - Electron 与 electron-builder 辅助工具使用官方 GitHub 下载地址。
 - `.gitattributes` 必须保留 Gen UI vendor 快照的原始字节，防止 Windows
   `core.autocrlf` 改写换行后触发固定 SHA256 校验失败；不得通过跳过摘要检查来出包。
-- 工作流仅有 `contents: read` 权限，产物保存 14 天，不创建 GitHub Release。
-- artifact 名为 `ZCode-windows-x64-<commit SHA>`，包含 `.exe`、`.blockmap` 和
+- 工作流仅有 `contents: read` 权限，产物保存 14 天；仅上传 Actions artifact，不创建 GitHub Release，
+  不上传 CDN 或修改正式更新源。
+- artifact 名为 `ZCode-<channel>-windows-x64-<commit SHA>`，包含 `.exe`、`.blockmap` 和
   `latest*.yml`；缺少安装包必须使工作流失败。
 
 验收以真实 Windows run 成功、安装包非空并可从 run 页面下载为准；`--dry-run`

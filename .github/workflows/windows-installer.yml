@@ -16,15 +16,29 @@ concurrency:
 
 jobs:
   build:
-    name: Windows x64 NSIS
+    name: Windows x64 NSIS (${{ matrix.channel }})
     runs-on: windows-2022
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - channel: stable
+            zcode-env: production
+            preview-identity: "0"
+          - channel: preview-production
+            zcode-env: production
+            preview-identity: "1"
+          - channel: preview-test
+            zcode-env: test
+            preview-identity: "0"
     defaults:
       run:
         shell: pwsh
     env:
       HUSKY: "0"
-      ZCODE_ENV: production
+      ZCODE_ENV: ${{ matrix.zcode-env }}
+      ZCODE_PREVIEW_IDENTITY: ${{ matrix.preview-identity }}
       ZCODE_TARGET_OS: win
       ZCODE_TARGET_ARCH: x64
       ZCODE_SKIP_REMOTE_ASSETS: "1"
@@ -75,7 +89,7 @@ jobs:
       - name: Upload Windows installer
         uses: actions/upload-artifact@v4
         with:
-          name: ZCode-windows-x64-${{ github.sha }}
+          name: ZCode-${{ matrix.channel }}-windows-x64-${{ github.sha }}
           path: |
             packages/desktop/dist/*.exe
             packages/desktop/dist/*.blockmap
