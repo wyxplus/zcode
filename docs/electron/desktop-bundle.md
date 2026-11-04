@@ -94,15 +94,19 @@ runner 上为以下三个渠道分别构建当前提交，生成未签名的 NSI
 应用构建和打包，避免编译期身份与安装包身份不一致。某个渠道失败不取消其他渠道。
 
 GitHub Actions run 持有构建状态，安装包内容仍由既有 desktop 打包脚本负责。
-每次 run 以提交 SHA 标识源码，依次安装依赖、准备本地运行资源、构建应用、打包并执行
-现有产物检查，最后保存 artifact；重试重新构建同一提交，不修改源码或正式更新源。
+每次 run 以提交 SHA 标识源码，依次安装依赖、运行数据迁移持久化回归、准备本地运行资源、
+构建应用、打包并执行现有产物检查，最后保存 artifact；重试重新构建同一提交，不修改源码或正式更新源。
 
 ```text
 push / workflow_dispatch → 指定提交 → 三渠道 Windows runner matrix
-  → frozen install → prepare:desktop-runtime → build:no-runtime-assets
+  → frozen install → 数据迁移持久化回归 → prepare:desktop-runtime → build:no-runtime-assets
   → bundle --skip-prepare --skip-build → 产物检查 → Actions artifact
 ```
 
+- 每个渠道在 Windows runner 安装依赖后执行
+  `pnpm exec vitest run packages/services/test/dataDirectoryDurability.test.ts`，
+  验证文件持久化、失败时保留源数据和原 locator、同事务重试；失败时停止该渠道构建，
+  不能仅凭安装包编译成功判断迁移兼容性。
 - `ZCODE_ENV` 选择后端环境，`ZCODE_PREVIEW_IDENTITY` 独立选择产品身份；两者按上表显式设置。
 - `ZCODE_TARGET_OS=win`、`ZCODE_TARGET_ARCH=x64` 贯穿资源准备和打包。
 - `ZCODE_SKIP_REMOTE_ASSETS=1` 跳过与本次桌面安装包独立的远程资源发布。

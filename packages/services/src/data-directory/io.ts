@@ -70,7 +70,9 @@ export async function flushMigrationTree(path: string): Promise<void> {
     for (const name of await readdir(path)) await flushMigrationTree(join(path, name));
     await syncDirectory(path);
   } else {
-    const handle = await open(path, "r");
+    // Windows 的 FlushFileBuffers 要求可写句柄；只读打开会在提交前报 EPERM。
+    // r+ 不截断已经校验的目标内容，且落盘失败仍必须阻止 locator 提交。
+    const handle = await open(path, "r+");
     try {
       await handle.sync();
     } finally {
