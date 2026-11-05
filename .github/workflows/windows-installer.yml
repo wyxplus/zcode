@@ -69,8 +69,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Test data directory durability
-        run: pnpm exec vitest run packages/services/test/dataDirectoryDurability.test.ts
+      - name: Test data directory migration
+        run: pnpm exec vitest run packages/services/test/dataDirectoryDurability.test.ts packages/desktop/test/desktopDataMigrationLifecycle.test.ts
 
       - name: Prepare desktop runtime
         run: pnpm prepare:desktop-runtime

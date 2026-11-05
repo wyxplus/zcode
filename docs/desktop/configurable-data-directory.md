@@ -57,6 +57,8 @@ sequenceDiagram
         Main->>M: block new process leases
         Main->>W: strict close
         W-->>Main: clean-close result
+        W-->>Main: Electron exit=0 notification
+        Main->>Main: confirm captured OS PID has exited
         Main->>Main: flush browser state and exit fully
         B->>B: acquire exclusive use; copy + verify
         B->>B: commit active locator last
@@ -65,6 +67,8 @@ sequenceDiagram
 ```
 
 先封闭新 admission 再检查 idle，防止手机提交/定时任务的检查后竞态。reserve 只封闭入口并检查，不能关库或停止已 accepted 工作。任何 owner 忙碌时向全部 owner 发送 cancel、恢复入口并取消事务，不自动重启。只有全部 owner reserve 成功才进入不可逆的 strict-close；之后关闭失败才允许取消迁移并冷启旧根。已 accepted 输入不清空、不自动 drain；有 running、queued、等待交互、在途插件安装或其他不安全写入时不迁移。普通退出的 timeout/forced-exit 不等于 clean-close；任何未确认关闭阻止执行。复制 Electron profile 必须在旧 Electron 完整退出后、下次正常业务导入前的维护阶段执行；该维护阶段不初始化旧 profile，也不是新的 Local Host。
+
+Main 的 strict-close 屏障同时要求匹配的 clean ACK、零退出码及系统进程确实退出。Electron UtilityProcess 的 `exit` 通知可能早于 Windows 系统进程终止；Main 在关闭前捕获 PID，收到通知后在原关闭时限内等待该 PID 不再存在，再检查所有使用租约。PID 缺失、探测权限错误或超时均不放行，不强杀、不忽略独立使用者租约，也不删除仍存活进程的租约。回归必须覆盖提前通知、迟到终止、始终存活及连续多次关闭；冷重启后设置路径与 active locator 必须一致。
 
 先 reserve scheduler，确认已认领任务的派发与结算均结束后再封闭 Hosts；BUSY 取消先恢复 Hosts，再恢复 scheduler，避免已接受的定时任务被入口门禁丢弃。取消撤销本轮 reservation，迟到的异步结果不能重新封闭入口或确认已取消的准备；旧 reserve 未结束前不能启动下一轮。迁移日志写入失败也必须尝试解封，不能把取消日志成功作为恢复入口的前提。
 
